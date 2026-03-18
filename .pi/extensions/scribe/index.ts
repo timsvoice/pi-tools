@@ -86,6 +86,12 @@ export default function (pi: ExtensionAPI) {
 	let lastPersistedState = "";
 	let isRunning = false;
 
+	const updateFooter = (ctx: ExtensionContext, interval: number) => {
+		if (!ctx.hasUI) return;
+		const text = `Scribe ${turnsSinceLastDecision}/${interval}`;
+		ctx.ui.setStatus("scribe", `\x1b[90m${text}\x1b[0m`);
+	};
+
 	const persistState = () => {
 		const state: ScribeState = { turnsSinceLastDecision, lastProcessedEntryId };
 		const serialized = JSON.stringify(state);
@@ -109,10 +115,14 @@ export default function (pi: ExtensionAPI) {
 
 	pi.on("session_start", async (_event, ctx) => {
 		hydrateState(ctx);
+		const interval = await getDecisionIntervalTurns(ctx.cwd);
+		updateFooter(ctx, interval);
 	});
 
 	pi.on("session_switch", async (_event, ctx) => {
 		hydrateState(ctx);
+		const interval = await getDecisionIntervalTurns(ctx.cwd);
+		updateFooter(ctx, interval);
 	});
 
 	pi.on("agent_end", async (_event, ctx) => {
@@ -123,6 +133,7 @@ export default function (pi: ExtensionAPI) {
 			const decisionIntervalTurns = await getDecisionIntervalTurns(ctx.cwd);
 
 			turnsSinceLastDecision += 1;
+			updateFooter(ctx, decisionIntervalTurns);
 			if (turnsSinceLastDecision < decisionIntervalTurns) {
 				persistState();
 				return;
@@ -130,6 +141,7 @@ export default function (pi: ExtensionAPI) {
 
 			turnsSinceLastDecision = 0;
 			persistState();
+			updateFooter(ctx, decisionIntervalTurns);
 			if (ctx.hasUI) ctx.ui.notify("Scribe: logging decisions...", "info");
 
 			const decisionsPath = join(ctx.cwd, ...DECISIONS_PATH);

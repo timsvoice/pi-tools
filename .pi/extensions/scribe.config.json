@@ -1,4 +1,4 @@
 {
-  "decisionIntervalTurns": 10,
-  "editorRateMultiplier": 3
+  "decisionIntervalTurns": 1,
+  "editorRateMultiplier": 2
 }
