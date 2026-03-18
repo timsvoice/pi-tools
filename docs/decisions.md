@@ -41,3 +41,23 @@
 **Why:** Continuous reprocessing of the same conversation caused duplicate and noisy entries in `docs/decisions.md`; interval + incremental input reduces duplication and focuses outputs.  
 **Invalidation:** Revisit if higher fidelity is needed (e.g., per-turn capture), or if a more robust checkpointing mechanism (e.g., entry-id based tracking) replaces count-based slicing.  
 **Status:** candidate
+
+Love this prompt. It’s clear and strict in the right ways.
+
+I’d make just two tiny tweaks for even better precision:
+
+1) In **Output rules**, add:
+- “Do not output placeholders or commentary.”
+
+2) In **Required format**, enforce one more constraint:
+- “If any required field is unknown, omit the candidate.”
+
+If you want, I can provide the final tightened `PROMPT.md` text with those edits applied verbatim.
+
+### [CANDIDATE] Filter and gate LLM decision-log writes by strict entry format
+**Type:** CONSTRAINT  
+**Decision:** The decision recorder should append to `docs/decisions.md` only blocks that match the required candidate-entry format (e.g., start with `### [CANDIDATE]`) instead of appending raw model output verbatim.  
+**Why:** Raw-output appends allowed non-decision commentary and malformed content into the canonical log, reducing trust and creating maintenance noise; strict gating trades recall for log integrity.  
+**Project Impact:** Future recorder changes must preserve a validation/filter step before file writes, and malformed or extra assistant text must be dropped rather than persisted.  
+**Invalidation:** Revisit if the system moves to structured/function-call outputs with schema validation that guarantees only valid decision objects are produced.  
+**Status:** candidate

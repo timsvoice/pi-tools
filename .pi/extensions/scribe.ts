@@ -48,6 +48,18 @@ function extractResponseText(responseContent: Array<{ type: string; text?: strin
 		.trim();
 }
 
+function keepCandidateBlocks(markdown: string): string {
+	const text = markdown.trim();
+	if (!text) return "";
+
+	const blocks = text
+		.split(/\n(?=### \[CANDIDATE\])/)
+		.map((b) => b.trim())
+		.filter((b) => b.startsWith("### [CANDIDATE]"));
+
+	return blocks.join("\n\n").trim();
+}
+
 export default function (pi: ExtensionAPI) {
 	let turnsSinceLastDecision = 0;
 	let lastTriggeredMessageCount = 0;
@@ -105,7 +117,7 @@ export default function (pi: ExtensionAPI) {
 				{ apiKey },
 			);
 
-			const text = extractResponseText(response.content);
+			const text = keepCandidateBlocks(extractResponseText(response.content));
 			if (!text) {
 				if (ctx.hasUI) ctx.ui.notify("Scribe: no decisions made", "success");
 				return;
