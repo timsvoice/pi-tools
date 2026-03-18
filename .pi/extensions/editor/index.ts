@@ -20,17 +20,26 @@ import {
 
 const DEFAULT_DECISION_INTERVAL_TURNS = 3;
 const DEFAULT_EDITOR_RATE_MULTIPLIER = 3;
-const CONFIG_PATH = [".pi", "extensions", "scribe.config.json"];
+const PRIMARY_CONFIG_PATH = [".pi", "extensions", "decision-pipeline.config.json"];
+const LEGACY_CONFIG_PATH = [".pi", "extensions", "scribe.config.json"];
 const DECISIONS_PATH = ["docs", "decisions.md"];
 const OUTPUT_PATH = ["docs", "conventions.md"];
 const PROMPT_TEMPLATE_PATH = [".pi", "extensions", "editor", "PROMPT.md"];
 const CONVENTIONS_TEMPLATE_PATH = [".pi", "extensions", "editor", "CONVENTIONS_TEMPLATE.md"];
 const EDITOR_SYSTEM_PROMPT = "You are a concise assistant. Reply with plain text only.";
 const STATE_CUSTOM_TYPE = "editor-state";
+const REQUIRED_CONVENTIONS_HEADINGS = ["# Conventions", "## Active Decisions"];
+const DEFAULT_DECISIONS_DOCUMENT = "# Decision Log\n";
 
 type EditorState = {
 	turnsSinceLastEdit: number;
 	lastProcessedDecisionsHash?: string;
+	runsSkipped?: number;
+	runsExecuted?: number;
+	conventionsUpdates?: number;
+	noChangeRuns?: number;
+	invalidOutputSkips?: number;
+	failures?: number;
 };
 
 type EditorDeps = {
@@ -47,14 +56,61 @@ const defaultDeps: EditorDeps = {
 	complete,
 };
 
+const asNonNegativeInt = (value: unknown, fallback = 0): number =>
+	typeof value === "number" && Number.isInteger(value) && value >= 0 ? value : fallback;
+
+const hasRequiredConventionsSections = (text: string): boolean =>
+	REQUIRED_CONVENTIONS_HEADINGS.every((heading) => text.includes(heading));
+
+async function readPipelineConfigText(cwd: string, readText: EditorDeps["readText"]): Promise<string> {
+	for (const pathParts of [PRIMARY_CONFIG_PATH, LEGACY_CONFIG_PATH]) {
+		try {
+			return await readText(join(cwd, ...pathParts));
+		} catch {
+			// try next path
+		}
+	}
+	throw new Error("No config file found");
+}
+
+async function readConfiguredEditorIntervalTurns(cwd: string, deps: EditorDeps): Promise<number> {
+	try {
+		const configText = await readPipelineConfigText(cwd, deps.readText);
+		return computeEditorIntervalTurns(parseEditorConfig(configText));
+	} catch {
+		return DEFAULT_DECISION_INTERVAL_TURNS * DEFAULT_EDITOR_RATE_MULTIPLIER;
+	}
+}
+
 export function createEditorAgentEndHandler(deps: EditorDeps) {
 	let turnsSinceLastEdit = 0;
 	let lastProcessedDecisionsHash: string | undefined;
+	let runsSkipped = 0;
+	let runsExecuted = 0;
+	let conventionsUpdates = 0;
+	let noChangeRuns = 0;
+	let invalidOutputSkips = 0;
+	let failures = 0;
 	let lastPersistedState = "";
 	let isRunning = false;
 
+	const updateFooter = (ctx: ExtensionContext, interval: number) => {
+		if (!ctx.hasUI) return;
+		const text = `Editor ${turnsSinceLastEdit}/${interval} | run:${runsExecuted} upd:${conventionsUpdates} skip:${runsSkipped}`;
+		ctx.ui.setStatus("editor", `\x1b[90m${text}\x1b[0m`);
+	};
+
 	const persistState = (pi: ExtensionAPI) => {
-		const state: EditorState = { turnsSinceLastEdit, lastProcessedDecisionsHash };
+		const state: EditorState = {
+			turnsSinceLastEdit,
+			lastProcessedDecisionsHash,
+			runsSkipped,
+			runsExecuted,
+			conventionsUpdates,
+			noChangeRuns,
+			invalidOutputSkips,
+			failures,
+		};
 		const serialized = JSON.stringify(state);
 		if (serialized === lastPersistedState) return;
 		pi.appendEntry(STATE_CUSTOM_TYPE, state);
@@ -66,21 +122,18 @@ export function createEditorAgentEndHandler(deps: EditorDeps) {
 		for (const entry of ctx.sessionManager.getEntries()) {
 			if (entry.type !== "custom" || entry.customType !== STATE_CUSTOM_TYPE) continue;
 			if (!isEditorState(entry.data)) continue;
-			latest = entry.data;
+			latest = entry.data as EditorState;
 		}
 		if (!latest) return;
 		turnsSinceLastEdit = latest.turnsSinceLastEdit;
 		lastProcessedDecisionsHash = latest.lastProcessedDecisionsHash;
+		runsSkipped = asNonNegativeInt(latest.runsSkipped);
+		runsExecuted = asNonNegativeInt(latest.runsExecuted);
+		conventionsUpdates = asNonNegativeInt(latest.conventionsUpdates);
+		noChangeRuns = asNonNegativeInt(latest.noChangeRuns);
+		invalidOutputSkips = asNonNegativeInt(latest.invalidOutputSkips);
+		failures = asNonNegativeInt(latest.failures);
 		lastPersistedState = JSON.stringify(latest);
-	};
-
-	const readEditorIntervalTurns = async (cwd: string): Promise<number> => {
-		try {
-			const configText = await deps.readText(join(cwd, ...CONFIG_PATH));
-			return computeEditorIntervalTurns(parseEditorConfig(configText));
-		} catch {
-			return DEFAULT_DECISION_INTERVAL_TURNS * DEFAULT_EDITOR_RATE_MULTIPLIER;
-		}
 	};
 
 	const readCurrentConventions = async (cwd: string, outputPath: string): Promise<string> => {
@@ -101,22 +154,40 @@ export function createEditorAgentEndHandler(deps: EditorDeps) {
 		return defaultConventionsDocument();
 	};
 
+	const readOrBootstrapDecisions = async (decisionsPath: string): Promise<string> => {
+		try {
+			const existing = await deps.readText(decisionsPath);
+			if (existing.trim()) return existing;
+		} catch {
+			// bootstrap missing file
+		}
+
+		await deps.writeText(decisionsPath, DEFAULT_DECISIONS_DOCUMENT);
+		return DEFAULT_DECISIONS_DOCUMENT;
+	};
+
 	return {
 		hydrateState,
+		updateFooter,
 		async onAgentEnd(pi: ExtensionAPI, ctx: ExtensionContext) {
 			if (isRunning) return;
 			isRunning = true;
 
 			try {
-				const editorIntervalTurns = await readEditorIntervalTurns(ctx.cwd);
+				const editorIntervalTurns = await readConfiguredEditorIntervalTurns(ctx.cwd, deps);
 				const turnProgress = nextTurnCounter(turnsSinceLastEdit, editorIntervalTurns);
 				turnsSinceLastEdit = turnProgress.turnsSinceLastEdit;
+				updateFooter(ctx, editorIntervalTurns);
 				if (!turnProgress.shouldRun) {
+					runsSkipped++;
 					persistState(pi);
+					updateFooter(ctx, editorIntervalTurns);
 					return;
 				}
 
+				runsExecuted++;
 				persistState(pi);
+				updateFooter(ctx, editorIntervalTurns);
 				if (ctx.hasUI) ctx.ui.notify("Editor: consolidating decisions...", "info");
 
 				const decisionsPath = join(ctx.cwd, ...DECISIONS_PATH);
@@ -124,27 +195,47 @@ export function createEditorAgentEndHandler(deps: EditorDeps) {
 				const promptPath = join(ctx.cwd, ...PROMPT_TEMPLATE_PATH);
 				await deps.ensureDir(dirname(outputPath));
 
-				const decisions = await deps.readText(decisionsPath);
-				if (!decisions.trim()) return;
+				const decisions = await readOrBootstrapDecisions(decisionsPath);
+				if (!decisions.trim()) {
+					noChangeRuns++;
+					persistState(pi);
+					updateFooter(ctx, editorIntervalTurns);
+					return;
+				}
 
 				const decisionsHash = simpleHash(decisions);
 				if (decisionsHash === lastProcessedDecisionsHash) {
+					noChangeRuns++;
+					persistState(pi);
+					updateFooter(ctx, editorIntervalTurns);
 					if (ctx.hasUI) ctx.ui.notify("Editor: no decision changes", "success");
 					return;
 				}
 
 				const candidateBlocks = getCandidateBlocks(decisions);
 				if (candidateBlocks.length === 0) {
+					noChangeRuns++;
 					lastProcessedDecisionsHash = decisionsHash;
 					persistState(pi);
+					updateFooter(ctx, editorIntervalTurns);
 					if (ctx.hasUI) ctx.ui.notify("Editor: no unreviewed decisions", "success");
 					return;
 				}
 
 				const model = ctx.model;
-				if (!model) return;
+				if (!model) {
+					noChangeRuns++;
+					persistState(pi);
+					updateFooter(ctx, editorIntervalTurns);
+					return;
+				}
 				const apiKey = await ctx.modelRegistry.getApiKey(model);
-				if (!apiKey) return;
+				if (!apiKey) {
+					noChangeRuns++;
+					persistState(pi);
+					updateFooter(ctx, editorIntervalTurns);
+					return;
+				}
 
 				const [currentConventions, promptTemplate] = await Promise.all([
 					readCurrentConventions(ctx.cwd, outputPath),
@@ -164,19 +255,37 @@ export function createEditorAgentEndHandler(deps: EditorDeps) {
 
 				const text = extractResponseText(response.content);
 				if (!text) {
+					noChangeRuns++;
+					persistState(pi);
+					updateFooter(ctx, editorIntervalTurns);
 					if (ctx.hasUI) ctx.ui.notify("Editor: no output", "success");
+					return;
+				}
+
+				const normalizedOutput = `${text.trim()}\n`;
+				if (!hasRequiredConventionsSections(normalizedOutput)) {
+					invalidOutputSkips++;
+					persistState(pi);
+					updateFooter(ctx, editorIntervalTurns);
+					if (ctx.hasUI) {
+						ctx.ui.notify("Editor: skipped write (missing required conventions sections)", "warning");
+					}
 					return;
 				}
 
 				const reviewedDecisions = markCandidatesReviewed(decisions);
 				await Promise.all([
-					deps.writeText(outputPath, `${text.trim()}\n`),
+					deps.writeText(outputPath, normalizedOutput),
 					deps.writeText(decisionsPath, reviewedDecisions),
 				]);
+				conventionsUpdates++;
 				lastProcessedDecisionsHash = simpleHash(reviewedDecisions);
 				persistState(pi);
+				updateFooter(ctx, editorIntervalTurns);
 				if (ctx.hasUI) ctx.ui.notify("Editor: updated docs/conventions.md", "success");
 			} catch (error) {
+				failures++;
+				persistState(pi);
 				if (ctx.hasUI) {
 					ctx.ui.notify(`Editor failed: ${error instanceof Error ? error.message : String(error)}`, "warning");
 				}
@@ -192,10 +301,14 @@ export default function (pi: ExtensionAPI) {
 
 	pi.on("session_start", async (_event, ctx) => {
 		handler.hydrateState(ctx);
+		const interval = await readConfiguredEditorIntervalTurns(ctx.cwd, defaultDeps);
+		handler.updateFooter(ctx, interval);
 	});
 
 	pi.on("session_switch", async (_event, ctx) => {
 		handler.hydrateState(ctx);
+		const interval = await readConfiguredEditorIntervalTurns(ctx.cwd, defaultDeps);
+		handler.updateFooter(ctx, interval);
 	});
 
 	pi.on("agent_end", async (_event, ctx) => {
