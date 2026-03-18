@@ -2,6 +2,10 @@
 
 Project-local pi extensions for maintaining a durable technical decision reference.
 
+## Primary objective
+
+Optimize project decision memory for future decision quality by minimizing noise, maximizing durable signal, and preserving only guidance that materially helps coding agents and supervising humans make correct engineering choices.
+
 ## What this does
 
 This repo contains two extensions that run on `agent_end`:
@@ -29,7 +33,7 @@ This repo contains two extensions that run on `agent_end`:
 - `.pi/extensions/editor/core.mjs` — pure editor logic
 - `.pi/extensions/editor/PROMPT.md` — editor merge/consolidation prompt
 - `.pi/extensions/editor/CONVENTIONS_TEMPLATE.md` — default conventions doc scaffold
-- `.pi/extensions/scribe.config.json` — cadence config
+- `.pi/extensions/decision-pipeline.config.json` — shared cadence config
 - `docs/decisions.md` — append-only candidate/reviewed decision log
 - `docs/conventions.md` — canonical consolidated conventions document
 
@@ -39,7 +43,7 @@ This repo contains two extensions that run on `agent_end`:
 
 Edit:
 
-`.pi/extensions/scribe.config.json`
+`.pi/extensions/decision-pipeline.config.json`
 
 ```json
 {
