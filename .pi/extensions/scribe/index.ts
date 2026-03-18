@@ -4,6 +4,17 @@ import { dirname, join } from "node:path";
 
 import type { ExtensionAPI, ExtensionContext } from "@mariozechner/pi-coding-agent";
 
+import {
+	buildScribePrompt,
+	extractResponseText,
+	extractTurnEntries,
+	isScribeState,
+	keepCandidateBlocks,
+	nextTurnCounter,
+	parseDecisionIntervalTurns,
+	selectNewTurns,
+} from "./core.mjs";
+
 const DEFAULT_DECISION_INTERVAL_TURNS = 3;
 const CONFIG_PATH = [".pi", "extensions", "scribe.config.json"];
 const DECISIONS_PATH = ["docs", "decisions.md"];
@@ -11,76 +22,26 @@ const PROMPT_TEMPLATE_PATH = [".pi", "extensions", "scribe", "PROMPT.md"];
 const SCRIBE_SYSTEM_PROMPT = "You are a concise assistant. Reply with plain text only.";
 const STATE_CUSTOM_TYPE = "scribe-state";
 
-type TurnEntry = {
-	entryId: string;
-	line: string;
-};
-
 type ScribeState = {
 	turnsSinceLastDecision: number;
 	lastProcessedEntryId?: string;
 };
 
-async function getDecisionIntervalTurns(cwd: string): Promise<number> {
-	try {
-		const configPath = join(cwd, ...CONFIG_PATH);
-		const raw = await readFile(configPath, "utf8");
-		const parsed = JSON.parse(raw) as { decisionIntervalTurns?: unknown };
-		if (typeof parsed.decisionIntervalTurns === "number" && Number.isInteger(parsed.decisionIntervalTurns) && parsed.decisionIntervalTurns > 0) {
-			return parsed.decisionIntervalTurns;
-		}
-	} catch {
-		// ignore config errors and use default
-	}
-	return DEFAULT_DECISION_INTERVAL_TURNS;
-}
+type ScribeDeps = {
+	readText: (path: string) => Promise<string>;
+	appendText: (path: string, text: string) => Promise<void>;
+	ensureDir: (path: string) => Promise<void>;
+	complete: typeof complete;
+};
 
-function getTurnEntries(ctx: ExtensionContext): TurnEntry[] {
-	const turns: TurnEntry[] = [];
-	for (const entry of ctx.sessionManager.getBranch()) {
-		if (entry.type !== "message") continue;
-		if (entry.message.role !== "user" && entry.message.role !== "assistant") continue;
-		const text = entry.message.content
-			.filter((part): part is { type: "text"; text: string } => part.type === "text")
-			.map((part) => part.text)
-			.join("\n")
-			.trim();
-		if (!text) continue;
-		turns.push({ entryId: entry.id, line: `${entry.message.role}: ${text}` });
-	}
-	return turns;
-}
+const defaultDeps: ScribeDeps = {
+	readText: (path) => readFile(path, "utf8"),
+	appendText: (path, text) => appendFile(path, text, "utf8"),
+	ensureDir: (path) => mkdir(path, { recursive: true }),
+	complete,
+};
 
-function extractResponseText(responseContent: Array<{ type: string; text?: string }>): string {
-	return responseContent
-		.filter((c): c is { type: "text"; text: string } => c.type === "text")
-		.map((c) => c.text)
-		.join("\n")
-		.trim();
-}
-
-function keepCandidateBlocks(markdown: string): string {
-	const text = markdown.trim();
-	if (!text) return "";
-
-	const blocks = text
-		.split(/\n(?=### \[CANDIDATE\])/)
-		.map((b) => b.trim())
-		.filter((b) => b.startsWith("### [CANDIDATE]"));
-
-	return blocks.join("\n\n").trim();
-}
-
-function isScribeState(value: unknown): value is ScribeState {
-	if (!value || typeof value !== "object") return false;
-	const turns = (value as { turnsSinceLastDecision?: unknown }).turnsSinceLastDecision;
-	const lastId = (value as { lastProcessedEntryId?: unknown }).lastProcessedEntryId;
-	if (typeof turns !== "number" || !Number.isInteger(turns) || turns < 0) return false;
-	if (lastId !== undefined && typeof lastId !== "string") return false;
-	return true;
-}
-
-export default function (pi: ExtensionAPI) {
+export function createScribeAgentEndHandler(deps: ScribeDeps) {
 	let turnsSinceLastDecision = 0;
 	let lastProcessedEntryId: string | undefined;
 	let lastPersistedState = "";
@@ -92,7 +53,7 @@ export default function (pi: ExtensionAPI) {
 		ctx.ui.setStatus("scribe", `\x1b[90m${text}\x1b[0m`);
 	};
 
-	const persistState = () => {
+	const persistState = (pi: ExtensionAPI) => {
 		const state: ScribeState = { turnsSinceLastDecision, lastProcessedEntryId };
 		const serialized = JSON.stringify(state);
 		if (serialized === lastPersistedState) return;
@@ -113,88 +74,116 @@ export default function (pi: ExtensionAPI) {
 		lastPersistedState = JSON.stringify(latest);
 	};
 
+	const readDecisionIntervalTurns = async (cwd: string): Promise<number> => {
+		try {
+			const configPath = join(cwd, ...CONFIG_PATH);
+			const configText = await deps.readText(configPath);
+			return parseDecisionIntervalTurns(configText, DEFAULT_DECISION_INTERVAL_TURNS);
+		} catch {
+			return DEFAULT_DECISION_INTERVAL_TURNS;
+		}
+	};
+
+	return {
+		hydrateState,
+		updateFooter,
+		async onAgentEnd(pi: ExtensionAPI, ctx: ExtensionContext) {
+			if (isRunning) return;
+			isRunning = true;
+
+			try {
+				const interval = await readDecisionIntervalTurns(ctx.cwd);
+				const turnProgress = nextTurnCounter(turnsSinceLastDecision, interval);
+				turnsSinceLastDecision = turnProgress.turnsSinceLastDecision;
+				updateFooter(ctx, interval);
+				if (!turnProgress.shouldRun) {
+					persistState(pi);
+					return;
+				}
+
+				persistState(pi);
+				if (ctx.hasUI) ctx.ui.notify("Scribe: logging decisions...", "info");
+
+				const decisionsPath = join(ctx.cwd, ...DECISIONS_PATH);
+				const promptPath = join(ctx.cwd, ...PROMPT_TEMPLATE_PATH);
+				await deps.ensureDir(dirname(decisionsPath));
+
+				const model = ctx.model;
+				if (!model) return;
+
+				const apiKey = await ctx.modelRegistry.getApiKey(model);
+				if (!apiKey) return;
+
+				const [promptTemplate, branch] = await Promise.all([
+					deps.readText(promptPath),
+					Promise.resolve(ctx.sessionManager.getBranch()),
+				]);
+
+				const turnEntries = extractTurnEntries(branch);
+				const turnSelection = selectNewTurns(turnEntries, lastProcessedEntryId);
+				lastProcessedEntryId = turnSelection.newLastProcessedEntryId;
+				persistState(pi);
+
+				const recentTurns = turnSelection.newTurns.map((turn) => turn.line).join("\n").trim();
+				if (!recentTurns) return;
+
+				const prompt = buildScribePrompt(promptTemplate, recentTurns);
+				const response = await deps.complete(
+					model,
+					{
+						systemPrompt: SCRIBE_SYSTEM_PROMPT,
+						messages: [{ role: "user", content: [{ type: "text", text: prompt }], timestamp: Date.now() }],
+					},
+					{ apiKey },
+				);
+
+				const text = keepCandidateBlocks(extractResponseText(response.content));
+				if (!text) {
+					if (ctx.hasUI) ctx.ui.notify("Scribe: no decisions made", "success");
+					return;
+				}
+
+				await deps.appendText(decisionsPath, `\n${text}\n`);
+				if (ctx.hasUI) ctx.ui.notify("Scribe: decisions logged", "success");
+			} catch (error) {
+				if (ctx.hasUI) {
+					ctx.ui.notify(`Scribe failed: ${error instanceof Error ? error.message : String(error)}`, "warning");
+				}
+			} finally {
+				isRunning = false;
+			}
+		},
+	};
+}
+
+export default function (pi: ExtensionAPI) {
+	const handler = createScribeAgentEndHandler(defaultDeps);
+
 	pi.on("session_start", async (_event, ctx) => {
-		hydrateState(ctx);
-		const interval = await getDecisionIntervalTurns(ctx.cwd);
-		updateFooter(ctx, interval);
+		handler.hydrateState(ctx);
+		const configPath = join(ctx.cwd, ...CONFIG_PATH);
+		let interval = DEFAULT_DECISION_INTERVAL_TURNS;
+		try {
+			interval = parseDecisionIntervalTurns(await defaultDeps.readText(configPath), DEFAULT_DECISION_INTERVAL_TURNS);
+		} catch {
+			// keep default
+		}
+		handler.updateFooter(ctx, interval);
 	});
 
 	pi.on("session_switch", async (_event, ctx) => {
-		hydrateState(ctx);
-		const interval = await getDecisionIntervalTurns(ctx.cwd);
-		updateFooter(ctx, interval);
+		handler.hydrateState(ctx);
+		const configPath = join(ctx.cwd, ...CONFIG_PATH);
+		let interval = DEFAULT_DECISION_INTERVAL_TURNS;
+		try {
+			interval = parseDecisionIntervalTurns(await defaultDeps.readText(configPath), DEFAULT_DECISION_INTERVAL_TURNS);
+		} catch {
+			// keep default
+		}
+		handler.updateFooter(ctx, interval);
 	});
 
 	pi.on("agent_end", async (_event, ctx) => {
-		if (isRunning) return;
-		isRunning = true;
-
-		try {
-			const decisionIntervalTurns = await getDecisionIntervalTurns(ctx.cwd);
-
-			turnsSinceLastDecision += 1;
-			updateFooter(ctx, decisionIntervalTurns);
-			if (turnsSinceLastDecision < decisionIntervalTurns) {
-				persistState();
-				return;
-			}
-
-			turnsSinceLastDecision = 0;
-			persistState();
-			updateFooter(ctx, decisionIntervalTurns);
-			if (ctx.hasUI) ctx.ui.notify("Scribe: logging decisions...", "info");
-
-			const decisionsPath = join(ctx.cwd, ...DECISIONS_PATH);
-			const promptPath = join(ctx.cwd, ...PROMPT_TEMPLATE_PATH);
-			await mkdir(dirname(decisionsPath), { recursive: true });
-
-			const model = ctx.model;
-			if (!model) return;
-
-			const apiKey = await ctx.modelRegistry.getApiKey(model);
-			if (!apiKey) return;
-
-			const promptTemplate = await readFile(promptPath, "utf8");
-			const turnEntries = getTurnEntries(ctx);
-			if (turnEntries.length === 0) return;
-
-			let startIndex = 0;
-			if (lastProcessedEntryId) {
-				const idx = turnEntries.findIndex((turn) => turn.entryId === lastProcessedEntryId);
-				startIndex = idx >= 0 ? idx + 1 : 0;
-			}
-
-			const newTurns = turnEntries.slice(startIndex);
-			lastProcessedEntryId = turnEntries[turnEntries.length - 1]?.entryId;
-			persistState();
-
-			const recentTurns = newTurns.map((turn) => turn.line).join("\n").trim();
-			if (!recentTurns) return;
-
-			const prompt = promptTemplate.replace("{recentTurns}", recentTurns);
-			const response = await complete(
-				model,
-				{
-					systemPrompt: SCRIBE_SYSTEM_PROMPT,
-					messages: [{ role: "user", content: [{ type: "text", text: prompt }], timestamp: Date.now() }],
-				},
-				{ apiKey },
-			);
-
-			const text = keepCandidateBlocks(extractResponseText(response.content));
-			if (!text) {
-				if (ctx.hasUI) ctx.ui.notify("Scribe: no decisions made", "success");
-				return;
-			}
-
-			await appendFile(decisionsPath, `\n${text}\n`, "utf8");
-			if (ctx.hasUI) ctx.ui.notify("Scribe: decisions logged", "success");
-		} catch (error) {
-			if (ctx.hasUI) {
-				ctx.ui.notify(`Scribe failed: ${error instanceof Error ? error.message : String(error)}`, "warning");
-			}
-		} finally {
-			isRunning = false;
-		}
+		await handler.onAgentEnd(pi, ctx);
 	});
 }
