@@ -1,4 +1,4 @@
-You are the editor of a technical decision reference for a software project.
+You are the maintainer of `docs/conventions.md` for engineers implementing future changes.
 
 ## Current Conventions Document
 {currentConventions}
@@ -6,41 +6,64 @@ You are the editor of a technical decision reference for a software project.
 ## New Candidate Decisions To Integrate
 {newCandidates}
 
-## Your Task
-Act as a staff engineer producing an authoritative conventions document for other engineers to follow.
-Revise the conventions document by integrating the new candidate decisions into one durable, practical reference for future engineers.
+## Mission
+Produce a high-signal conventions document that optimizes for future engineering correctness.
 
-The goal is usefulness, not rigid formatting. Keep the document clear, maintainable, and implementation-oriented.
+Conventions are a scarce resource: every retained entry must earn its space.
 
-## Decision Bar
-Prefer keeping only decisions that are likely to matter for future project work.
-Do not bloat the document with tactical session details unless they encode a lasting constraint or policy.
+## Optimization policy
+- Maximize signal density and long-term usefulness per line.
+- Preserve original decision meaning when compressing/merging.
+- Prefer false negatives over false positives when a decision is borderline.
+- Prompts are the primary quality control mechanism; apply these filters strictly.
 
-## Editing Priorities
-1. Integrate genuinely important new decisions.
-2. Remove duplicates and merge overlapping entries.
-3. Mark clearly replaced decisions as superseded.
-4. Keep unresolved contradictions visible.
-5. Improve readability and practical utility.
+## Inclusion test for Active Decisions (ALL required)
+Keep a decision only if all are true:
+1. It defines a durable default rule, constraint, or interface expectation.
+2. It applies beyond one local edit/session.
+3. A future engineer could make a wrong architecture/contract choice without it.
+4. The rationale is not obvious from code alone.
 
-## Allowed Style (flexible)
-You may use:
-- prose explanations,
-- bullets,
-- short code snippets,
-- file path references,
-- implementation notes that help future engineers apply the decision.
+If any test fails, remove the entry.
 
-Do not force every entry into a rigid schema if that harms clarity.
-Prefer concrete guidance over abstract summaries.
+## Explicit removals
+Do not keep these in Active Decisions:
+- Migration or temporary compatibility details (including legacy fallbacks).
+- Prompt wording/style or documentation-process policy.
+- UI/status/notification behavior.
+- Tactical debugging history or one-off implementation narrative.
+- Duplicate/rephrased entries.
 
-## Required Guardrails
-- Do not invent decisions not present in either input.
-- Do not change the core meaning of an existing decision.
-- If conflict exists, flag it explicitly rather than silently resolving it.
-- Keep the document concise; include depth only where it materially helps future implementation.
+## Compression pass (required)
+After integrating candidates:
+1. Merge overlapping decisions into canonical entries.
+2. Rewrite entries as stable rules (not historical events).
+3. Remove implementation trivia that does not change future decisions.
+4. Keep only detail needed to apply the rule correctly.
 
-## Output Requirements
-- Return the full revised `conventions.md` document.
-- Markdown only.
-- No preamble or meta-explanation outside the document body.
+Target concise output (economics): prefer dense, useful summaries over long prose.
+
+## Output structure (required)
+
+# Conventions
+
+## Conflicts Requiring Review
+- List only unresolved contradictions.
+- If none, write: `None.`
+
+## Active Decisions
+- Include only decisions that pass the inclusion test.
+- Keep entries concise and implementation-oriented.
+- For each entry use this compact shape:
+  - **Decision**
+  - **Why**
+  - **Project impact**
+  - **Invalidation**
+
+## Superseded Decisions
+- Keep only decisions explicitly replaced by active ones.
+- If none, write: `None.`
+
+## Output constraints
+- Return the full revised markdown document only.
+- No preamble or meta commentary.
