@@ -1,0 +1,17 @@
+{
+  "decisionIntervalTurns": 3,
+  "provider": "openai-codex",
+  "modelId": "gpt-5.1-codex-mini",
+  "maxDecisionsPerRun": 3,
+  "recentTurnLimit": 10,
+  "decisionsPath": ["docs", "decisions.md"],
+  "promptTemplatePath": [".pi", "extensions", "prompts", "PROMPT.md"],
+  "requiredMarkers": [
+    "### [CANDIDATE]",
+    "**Type:**",
+    "**Decision:**",
+    "**Why:**",
+    "**Invalidation:**",
+    "**Status:**"
+  ]
+}
