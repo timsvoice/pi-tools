@@ -9,6 +9,17 @@ const CONFIG_PATH = [".pi", "extensions", "scribe.config.json"];
 const DECISIONS_PATH = ["docs", "decisions.md"];
 const PROMPT_TEMPLATE_PATH = [".pi", "extensions", "prompts", "PROMPT.md"];
 const SCRIBE_SYSTEM_PROMPT = "You are a concise assistant. Reply with plain text only.";
+const STATE_CUSTOM_TYPE = "scribe-state";
+
+type TurnEntry = {
+	entryId: string;
+	line: string;
+};
+
+type ScribeState = {
+	turnsSinceLastDecision: number;
+	lastProcessedEntryId?: string;
+};
 
 async function getDecisionIntervalTurns(cwd: string): Promise<number> {
 	try {
@@ -24,20 +35,20 @@ async function getDecisionIntervalTurns(cwd: string): Promise<number> {
 	return DEFAULT_DECISION_INTERVAL_TURNS;
 }
 
-function getAllTurnLines(ctx: ExtensionContext): string[] {
-	return ctx.sessionManager
-		.getBranch()
-		.map((entry) => {
-			if (entry.type !== "message") return "";
-			if (entry.message.role !== "user" && entry.message.role !== "assistant") return "";
-			const text = entry.message.content
-				.filter((part): part is { type: "text"; text: string } => part.type === "text")
-				.map((part) => part.text)
-				.join("\n")
-				.trim();
-			return text ? `${entry.message.role}: ${text}` : "";
-		})
-		.filter(Boolean);
+function getTurnEntries(ctx: ExtensionContext): TurnEntry[] {
+	const turns: TurnEntry[] = [];
+	for (const entry of ctx.sessionManager.getBranch()) {
+		if (entry.type !== "message") continue;
+		if (entry.message.role !== "user" && entry.message.role !== "assistant") continue;
+		const text = entry.message.content
+			.filter((part): part is { type: "text"; text: string } => part.type === "text")
+			.map((part) => part.text)
+			.join("\n")
+			.trim();
+		if (!text) continue;
+		turns.push({ entryId: entry.id, line: `${entry.message.role}: ${text}` });
+	}
+	return turns;
 }
 
 function extractResponseText(responseContent: Array<{ type: string; text?: string }>): string {
@@ -60,52 +71,93 @@ function keepCandidateBlocks(markdown: string): string {
 	return blocks.join("\n\n").trim();
 }
 
+function isScribeState(value: unknown): value is ScribeState {
+	if (!value || typeof value !== "object") return false;
+	const turns = (value as { turnsSinceLastDecision?: unknown }).turnsSinceLastDecision;
+	const lastId = (value as { lastProcessedEntryId?: unknown }).lastProcessedEntryId;
+	if (typeof turns !== "number" || !Number.isInteger(turns) || turns < 0) return false;
+	if (lastId !== undefined && typeof lastId !== "string") return false;
+	return true;
+}
+
 export default function (pi: ExtensionAPI) {
 	let turnsSinceLastDecision = 0;
-	let lastTriggeredMessageCount = 0;
+	let lastProcessedEntryId: string | undefined;
+	let lastPersistedState = "";
+	let isRunning = false;
+
+	const persistState = () => {
+		const state: ScribeState = { turnsSinceLastDecision, lastProcessedEntryId };
+		const serialized = JSON.stringify(state);
+		if (serialized === lastPersistedState) return;
+		pi.appendEntry(STATE_CUSTOM_TYPE, state);
+		lastPersistedState = serialized;
+	};
+
+	const hydrateState = (ctx: ExtensionContext) => {
+		let latest: ScribeState | undefined;
+		for (const entry of ctx.sessionManager.getEntries()) {
+			if (entry.type !== "custom" || entry.customType !== STATE_CUSTOM_TYPE) continue;
+			if (!isScribeState(entry.data)) continue;
+			latest = entry.data;
+		}
+		if (!latest) return;
+		turnsSinceLastDecision = latest.turnsSinceLastDecision;
+		lastProcessedEntryId = latest.lastProcessedEntryId;
+		lastPersistedState = JSON.stringify(latest);
+	};
+
+	pi.on("session_start", async (_event, ctx) => {
+		hydrateState(ctx);
+	});
+
+	pi.on("session_switch", async (_event, ctx) => {
+		hydrateState(ctx);
+	});
 
 	pi.on("agent_end", async (_event, ctx) => {
-		const decisionIntervalTurns = await getDecisionIntervalTurns(ctx.cwd);
-
-		turnsSinceLastDecision += 1;
-		
-		if (turnsSinceLastDecision < decisionIntervalTurns) {
-			return;
-		}
-
-		turnsSinceLastDecision = 0;
-
-		if (ctx.hasUI) ctx.ui.notify("Scribe: logging decisions...", "info");
+		if (isRunning) return;
+		isRunning = true;
 
 		try {
+			const decisionIntervalTurns = await getDecisionIntervalTurns(ctx.cwd);
+
+			turnsSinceLastDecision += 1;
+			if (turnsSinceLastDecision < decisionIntervalTurns) {
+				persistState();
+				return;
+			}
+
+			turnsSinceLastDecision = 0;
+			persistState();
+			if (ctx.hasUI) ctx.ui.notify("Scribe: logging decisions...", "info");
+
 			const decisionsPath = join(ctx.cwd, ...DECISIONS_PATH);
 			const promptPath = join(ctx.cwd, ...PROMPT_TEMPLATE_PATH);
 			await mkdir(dirname(decisionsPath), { recursive: true });
 
 			const model = ctx.model;
-			if (!model) {
-				return;
-			}
+			if (!model) return;
 
 			const apiKey = await ctx.modelRegistry.getApiKey(model);
-			if (!apiKey) {
-				return;
-			}
+			if (!apiKey) return;
 
 			const promptTemplate = await readFile(promptPath, "utf8");
-			const allTurns = getAllTurnLines(ctx);
+			const turnEntries = getTurnEntries(ctx);
+			if (turnEntries.length === 0) return;
 
-			if (lastTriggeredMessageCount > allTurns.length) {
-				lastTriggeredMessageCount = 0;
+			let startIndex = 0;
+			if (lastProcessedEntryId) {
+				const idx = turnEntries.findIndex((turn) => turn.entryId === lastProcessedEntryId);
+				startIndex = idx >= 0 ? idx + 1 : 0;
 			}
 
-			const newTurns = allTurns.slice(lastTriggeredMessageCount);
-			lastTriggeredMessageCount = allTurns.length;
+			const newTurns = turnEntries.slice(startIndex);
+			lastProcessedEntryId = turnEntries[turnEntries.length - 1]?.entryId;
+			persistState();
 
-			const recentTurns = newTurns.join("\n");
-			if (!recentTurns) {
-				return;
-			}
+			const recentTurns = newTurns.map((turn) => turn.line).join("\n").trim();
+			if (!recentTurns) return;
 
 			const prompt = promptTemplate.replace("{recentTurns}", recentTurns);
 			const response = await complete(
@@ -129,6 +181,8 @@ export default function (pi: ExtensionAPI) {
 			if (ctx.hasUI) {
 				ctx.ui.notify(`Scribe failed: ${error instanceof Error ? error.message : String(error)}`, "warning");
 			}
+		} finally {
+			isRunning = false;
 		}
 	});
 }
