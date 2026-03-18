@@ -6,6 +6,9 @@ import type { ExtensionAPI, ExtensionContext } from "@mariozechner/pi-coding-age
 
 const DEFAULT_DECISION_INTERVAL_TURNS = 3;
 const CONFIG_PATH = [".pi", "extensions", "scribe.config.json"];
+const DECISIONS_PATH = ["docs", "decisions.md"];
+const PROMPT_TEMPLATE_PATH = [".pi", "extensions", "prompts", "PROMPT.md"];
+const SCRIBE_SYSTEM_PROMPT = "You are a concise assistant. Reply with plain text only.";
 
 async function getDecisionIntervalTurns(cwd: string): Promise<number> {
 	try {
@@ -21,62 +24,64 @@ async function getDecisionIntervalTurns(cwd: string): Promise<number> {
 	return DEFAULT_DECISION_INTERVAL_TURNS;
 }
 
+function getAllTurnLines(ctx: ExtensionContext): string[] {
+	return ctx.sessionManager
+		.getBranch()
+		.map((entry) => {
+			if (entry.type !== "message") return "";
+			if (entry.message.role !== "user" && entry.message.role !== "assistant") return "";
+			const text = entry.message.content
+				.filter((part): part is { type: "text"; text: string } => part.type === "text")
+				.map((part) => part.text)
+				.join("\n")
+				.trim();
+			return text ? `${entry.message.role}: ${text}` : "";
+		})
+		.filter(Boolean);
+}
+
+function extractResponseText(responseContent: Array<{ type: string; text?: string }>): string {
+	return responseContent
+		.filter((c): c is { type: "text"; text: string } => c.type === "text")
+		.map((c) => c.text)
+		.join("\n")
+		.trim();
+}
+
 export default function (pi: ExtensionAPI) {
 	let turnsSinceLastDecision = 0;
 	let lastTriggeredMessageCount = 0;
-	const uiLogLines: string[] = [];
-
-	const pushUiLog = (ctx: ExtensionContext, message: string) => {
-		if (!ctx.hasUI) return;
-		const time = new Date().toLocaleTimeString();
-		uiLogLines.push(`${time} ${message}`);
-		if (uiLogLines.length > 6) uiLogLines.shift();
-		ctx.ui.setWidget("scribe", ["Scribe", ...uiLogLines]);
-	};
 
 	pi.on("agent_end", async (_event, ctx) => {
 		const decisionIntervalTurns = await getDecisionIntervalTurns(ctx.cwd);
 
 		turnsSinceLastDecision += 1;
+		
 		if (turnsSinceLastDecision < decisionIntervalTurns) {
-			pushUiLog(ctx, `Waiting ${turnsSinceLastDecision}/${decisionIntervalTurns}`);
 			return;
 		}
+
 		turnsSinceLastDecision = 0;
 
-		pushUiLog(ctx, "Logging decisions...");
 		if (ctx.hasUI) ctx.ui.notify("Scribe: logging decisions...", "info");
 
 		try {
-			const decisionsPath = join(ctx.cwd, "docs", "decisions.md");
-			const promptPath = join(ctx.cwd, ".pi", "extensions", "prompts", "PROMPT.md");
+			const decisionsPath = join(ctx.cwd, ...DECISIONS_PATH);
+			const promptPath = join(ctx.cwd, ...PROMPT_TEMPLATE_PATH);
 			await mkdir(dirname(decisionsPath), { recursive: true });
 
 			const model = ctx.model;
 			if (!model) {
-				pushUiLog(ctx, "Skipped: no model");
 				return;
 			}
+
 			const apiKey = await ctx.modelRegistry.getApiKey(model);
 			if (!apiKey) {
-				pushUiLog(ctx, "Skipped: no API key");
 				return;
 			}
 
 			const promptTemplate = await readFile(promptPath, "utf8");
-			const allTurns = ctx.sessionManager
-				.getBranch()
-				.map((entry) => {
-					if (entry.type !== "message") return "";
-					if (entry.message.role !== "user" && entry.message.role !== "assistant") return "";
-					const text = entry.message.content
-						.filter((part): part is { type: "text"; text: string } => part.type === "text")
-						.map((part) => part.text)
-						.join("\n")
-						.trim();
-					return text ? `${entry.message.role}: ${text}` : "";
-				})
-				.filter(Boolean);
+			const allTurns = getAllTurnLines(ctx);
 
 			if (lastTriggeredMessageCount > allTurns.length) {
 				lastTriggeredMessageCount = 0;
@@ -87,35 +92,28 @@ export default function (pi: ExtensionAPI) {
 
 			const recentTurns = newTurns.join("\n");
 			if (!recentTurns) {
-				pushUiLog(ctx, "Skipped: no new turns");
 				return;
 			}
-			const prompt = promptTemplate.replace("{recentTurns}", recentTurns);
 
+			const prompt = promptTemplate.replace("{recentTurns}", recentTurns);
 			const response = await complete(
 				model,
 				{
-					systemPrompt: "You are a concise assistant. Reply with plain text only.",
+					systemPrompt: SCRIBE_SYSTEM_PROMPT,
 					messages: [{ role: "user", content: [{ type: "text", text: prompt }], timestamp: Date.now() }],
 				},
 				{ apiKey },
 			);
 
-			const text = response.content
-				.filter((c): c is { type: "text"; text: string } => c.type === "text")
-				.map((c) => c.text)
-				.join("\n")
-				.trim();
-
+			const text = extractResponseText(response.content);
 			if (!text) {
-				pushUiLog(ctx, "Skipped: empty output");
+				if (ctx.hasUI) ctx.ui.notify("Scribe: no decisions made", "success");
 				return;
 			}
+
 			await appendFile(decisionsPath, `\n${text}\n`, "utf8");
-			pushUiLog(ctx, "Decisions logged");
 			if (ctx.hasUI) ctx.ui.notify("Scribe: decisions logged", "success");
 		} catch (error) {
-			pushUiLog(ctx, "Error while logging decisions");
 			if (ctx.hasUI) {
 				ctx.ui.notify(`Scribe failed: ${error instanceof Error ? error.message : String(error)}`, "warning");
 			}
