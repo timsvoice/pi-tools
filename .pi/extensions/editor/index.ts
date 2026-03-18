@@ -20,8 +20,7 @@ import {
 
 const DEFAULT_DECISION_INTERVAL_TURNS = 3;
 const DEFAULT_EDITOR_RATE_MULTIPLIER = 3;
-const PRIMARY_CONFIG_PATH = [".pi", "extensions", "decision-pipeline.config.json"];
-const LEGACY_CONFIG_PATH = [".pi", "extensions", "scribe.config.json"];
+const CONFIG_PATH = [".pi", "extensions", "decision-pipeline.config.json"];
 const DECISIONS_PATH = ["docs", "decisions.md"];
 const OUTPUT_PATH = ["docs", "conventions.md"];
 const PROMPT_TEMPLATE_PATH = [".pi", "extensions", "editor", "PROMPT.md"];
@@ -63,14 +62,7 @@ const hasRequiredConventionsSections = (text: string): boolean =>
 	REQUIRED_CONVENTIONS_HEADINGS.every((heading) => text.includes(heading));
 
 async function readPipelineConfigText(cwd: string, readText: EditorDeps["readText"]): Promise<string> {
-	for (const pathParts of [PRIMARY_CONFIG_PATH, LEGACY_CONFIG_PATH]) {
-		try {
-			return await readText(join(cwd, ...pathParts));
-		} catch {
-			// try next path
-		}
-	}
-	throw new Error("No config file found");
+	return readText(join(cwd, ...CONFIG_PATH));
 }
 
 async function readConfiguredEditorIntervalTurns(cwd: string, deps: EditorDeps): Promise<number> {

@@ -16,8 +16,7 @@ import {
 } from "./core.mjs";
 
 const DEFAULT_DECISION_INTERVAL_TURNS = 3;
-const PRIMARY_CONFIG_PATH = [".pi", "extensions", "decision-pipeline.config.json"];
-const LEGACY_CONFIG_PATH = [".pi", "extensions", "scribe.config.json"];
+const CONFIG_PATH = [".pi", "extensions", "decision-pipeline.config.json"];
 const DECISIONS_PATH = ["docs", "decisions.md"];
 const PROMPT_TEMPLATE_PATH = [".pi", "extensions", "scribe", "PROMPT.md"];
 const SCRIBE_SYSTEM_PROMPT = "You are a concise assistant. Reply with plain text only.";
@@ -54,14 +53,7 @@ const asNonNegativeInt = (value: unknown, fallback = 0): number =>
 const countCandidateBlocks = (markdown: string): number => (markdown.match(/^### \[CANDIDATE\]/gm) ?? []).length;
 
 async function readPipelineConfigText(cwd: string, readText: ScribeDeps["readText"]): Promise<string> {
-	for (const pathParts of [PRIMARY_CONFIG_PATH, LEGACY_CONFIG_PATH]) {
-		try {
-			return await readText(join(cwd, ...pathParts));
-		} catch {
-			// try next path
-		}
-	}
-	throw new Error("No config file found");
+	return readText(join(cwd, ...CONFIG_PATH));
 }
 
 async function readConfiguredDecisionIntervalTurns(cwd: string, deps: ScribeDeps): Promise<number> {
