@@ -7,7 +7,7 @@ import type { ExtensionAPI, ExtensionContext } from "@mariozechner/pi-coding-age
 const DEFAULT_DECISION_INTERVAL_TURNS = 3;
 const CONFIG_PATH = [".pi", "extensions", "scribe.config.json"];
 const DECISIONS_PATH = ["docs", "decisions.md"];
-const PROMPT_TEMPLATE_PATH = [".pi", "extensions", "prompts", "PROMPT.md"];
+const PROMPT_TEMPLATE_PATH = [".pi", "extensions", "scribe", "PROMPT.md"];
 const SCRIBE_SYSTEM_PROMPT = "You are a concise assistant. Reply with plain text only.";
 const STATE_CUSTOM_TYPE = "scribe-state";
 
