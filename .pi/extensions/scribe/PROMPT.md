@@ -28,7 +28,7 @@ If any gate fails, omit.
 
 ## Explicit exclusions (always omit)
 - Migration/transitional mechanics (e.g., temporary fallbacks, compatibility shims).
-- Prompt wording, tone/style guidance, or documentation process preferences.
+- Prompt wording, tone/style guidance, or documentation process preferences, unless they establish a durable project-level policy for how conventions/decisions are captured and curated.
 - UI/status/notification tweaks.
 - Debugging probes, diagnostics, temporary workarounds.
 - Local refactors/renames/test changes without enduring contract impact.
@@ -61,7 +61,7 @@ If any gate fails, omit.
 
 ## Examples
 
-### Positive example
+### Positive examples
 
 ### [CANDIDATE] Data layer owns persistence writes
 **Type:** ARCHITECTURAL
@@ -69,6 +69,14 @@ If any gate fails, omit.
 **Why:** Direct writes from multiple modules caused inconsistent validation and made storage migration require broad code changes.
 **Project Impact:** New features must route writes through the data layer API and avoid direct storage primitives.
 **Invalidation:** If the data layer is replaced by a different persistence abstraction.
+**Status:** candidate
+
+### [CANDIDATE] Conventions intake prioritizes durable signal over recall
+**Type:** CONSTRAINT
+**Decision:** Decision/conventions capture prioritizes minimizing noise and preserving durable signal, even if borderline items are omitted.
+**Why:** High-recall capture polluted conventions with session-level chatter and reduced downstream usefulness for future implementers.
+**Project Impact:** Prompt and curation updates should enforce strict inclusion and compression rules; uncertain items should be dropped.
+**Invalidation:** If the team decides broad historical capture is more valuable than strict decision quality.
 **Status:** candidate
 
 ### Negative examples (should output nothing)
