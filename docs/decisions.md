@@ -74,12 +74,12 @@
 **Invalidation:** Revisit if the project changes target audience away from engineers, adopts a different documentation objective (e.g., exploratory/speculative writing), or evidence shows this policy reduces documentation effectiveness.  
 **Status:** candidate
 
-### [REVIEWED] Canonical shared pipeline config with legacy fallback
+### [REVIEWED] Canonical shared pipeline config
 **Type:** INTERFACE  
-**Decision:** The extensions now use `.pi/extensions/decision-pipeline.config.json` as the primary shared config, with `.pi/extensions/scribe.config.json` retained as a backward-compatible fallback.  
-**Why:** This establishes a clearer cross-extension configuration contract without breaking existing setups, trading immediate strictness for safe migration compatibility.  
-**Project Impact:** Future extension/config work should target the shared config path first and treat `scribe.config.json` as legacy compatibility behavior.  
-**Invalidation:** Revisit if backward compatibility is dropped or a new centralized config system replaces file-based extension config.  
+**Decision:** The extensions use `.pi/extensions/scribe.config.json` as the shared config.  
+**Why:** This establishes a clear cross-extension configuration contract with a single source of truth.  
+**Project Impact:** Future extension/config work should target `scribe.config.json` as the sole config path.  
+**Invalidation:** Revisit if a new centralized config system replaces file-based extension config.  
 **Status:** candidate
 
 ### [REVIEWED] Bootstrap `docs/decisions.md` when missing
@@ -90,23 +90,13 @@
 **Invalidation:** Revisit if the project moves away from a file-based decision log, changes canonical path/format, or introduces a centralized document provisioning layer.  
 **Status:** candidate
 
-### [REVIEWED] Unify extension config on `decision-pipeline.config.json`
+### [REVIEWED] Unify extension config on `scribe.config.json`
 **Type:** INTERFACE
-**Decision:** The project standardized both editor and scribe extensions on a single shared config file, `.pi/extensions/decision-pipeline.config.json`, and removed legacy fallback support for `.pi/extensions/scribe.config.json`.
-**Why:** Keeping legacy fallback preserves ambiguity and split-brain behavior across extensions; enforcing one canonical config path trades short-term backward compatibility for a clearer, cross-extension contract that reduces silent misconfiguration risk.
+**Decision:** The project standardized both editor and scribe extensions on a single shared config file, `.pi/extensions/scribe.config.json`.
+**Why:** Enforcing one canonical config path reduces ambiguity and silent misconfiguration risk across extensions.
 **Project Impact:** Future extension work must read/write the unified config contract only, and migration/bootstrapping logic should assume a single source of truth for decision pipeline behavior.
 **Invalidation:** Revisit if separate extension-specific configuration becomes necessary due to materially divergent runtime requirements that cannot be represented safely in one shared schema.
 **Status:** candidate
-
-### [REVIEWED] {Short title}
-**Type:** ARCHITECTURAL | INTERFACE | CONSTRAINT | REJECTED | PROVISIONAL
-**Decision:** One sentence stating what was decided.
-**Why:** Non-obvious rationale and tradeoff.
-**Project Impact:** Specific downstream impact on future engineering work.
-**Invalidation:** What would cause revisiting this decision.
-**Status:** candidate
-
-This is strict enough to keep conventions useful and non-noisy.
 
 ### [REVIEWED] Convention intake is aggressively compressed for durable signal
 **Type:** CONSTRAINT  
@@ -114,4 +104,44 @@ This is strict enough to keep conventions useful and non-noisy.
 **Why:** The team explicitly prefers false negatives over false positives to prevent `docs/conventions.md` from accumulating low-value session noise.  
 **Project Impact:** Prompt design and updates should enforce strict inclusion gates and compression behavior, with output treated as scarce and focused on stable engineering conventions.  
 **Invalidation:** Revisit if the team later decides broader historical capture is more valuable than strict noise suppression.  
+**Status:** candidate
+
+### [REVIEWED] Scribe intake allows durable capture-policy decisions
+**Type:** CONSTRAINT
+**Decision:** Prompt/process discussions remain excluded from conventions capture unless they define a durable, project-level policy governing how decisions/conventions are captured and curated.
+**Why:** Pure prompt chatter is usually noise, but stable intake-policy rules materially affect long-term decision quality and should be preserved.
+**Project Impact:** Future scribe prompt updates should continue filtering transient prompt-tuning while admitting durable curation-policy decisions as valid candidates.
+**Invalidation:** If the team changes policy to either fully exclude all prompt/process content or broadly include it regardless of durability.
+**Status:** candidate
+
+### [REVIEWED] Prompt quality changes must be evaluated with Promptfoo and LLM-as-a-judge
+**Type:** CONSTRAINT
+**Decision:** Changes to scribe/editor prompts should be validated through Promptfoo evaluations with LLM-as-a-judge scoring, using baseline-vs-candidate comparisons before adoption.
+**Why:** Intuition-driven prompt tuning reached diminishing returns and lacked repeatable quality signals and regression detection.
+**Project Impact:** Prompt updates should include eval fixtures, rubric-based judge scoring, and regression checks in the prompt iteration workflow.
+**Invalidation:** If the project replaces Promptfoo/LLM-as-a-judge with another standardized evaluation framework that provides equivalent regression-safe prompt validation.
+**Status:** candidate
+
+### [REVIEWED] CLI argument parser must not filter index 0 when optional flag indices are absent
+**Type:** CONSTRAINT
+**Decision:** When parsing CLI arguments with optional flags, index-exclusion logic must guard against absent flags (index `-1`) to avoid accidentally filtering out the primary positional argument at index 0.
+**Why:** `-1 + 1 = 0` causes the zeroth argument to be silently excluded, making the tool appear broken with no error pointing to the real cause — a subtle off-by-one class of bug.
+**Project Impact:** Any CLI argument parsing in the project that uses index-based filtering for optional flags must only exclude indices for flags that were actually found.
+**Invalidation:** If argument parsing is replaced by a structured parser library that handles positional vs flag arguments natively.
+**Status:** candidate
+
+### [REVIEWED] Pi skills are declarative SKILL.md-only packages
+**Type:** ARCHITECTURAL
+**Decision:** Pi skills consist of a single `SKILL.md` file containing tool descriptions and usage instructions; no scripts, `package.json`, or runtime dependencies belong in the skill folder.
+**Why:** The agent executes commands via its built-in bash tool, so wrapper scripts and dependency trees add complexity without value. The `brave-search` pattern proved a declarative-only skill is sufficient.
+**Project Impact:** New skills must follow the SKILL.md-only pattern. Existing skills carrying scripts or package manifests should be reduced to a single SKILL.md. Code review should reject skill PRs that introduce runtime artifacts.
+**Invalidation:** If a skill requires server-side logic, persistent state, or dependencies that cannot be delegated to an external CLI.
+**Status:** candidate
+
+### [REVIEWED] Scribe extension must be self‑contained under .pi/extensions
+**Type:** ARCHITECTURAL
+**Decision:** The scribe skill must live entirely under `.pi/extensions/` as a single self‑contained extension and must not modify core Pi agent logic, while still using global settings.
+**Why:** Keeping the extension isolated avoids coupling to core agent internals and makes the skill portable and maintainable.
+**Project Impact:** All runtime code, prompts, and templates for scribe should reside within its extension folder; future changes should not touch core agent files.
+**Invalidation:** If the project adopts a new extension system that requires shared core modifications.
 **Status:** candidate

@@ -2,13 +2,21 @@ import test from "node:test";
 import assert from "node:assert/strict";
 
 import {
+	buildEditorPrompt,
+	buildPendingDecisionsDocument,
 	buildScribePrompt,
+	computeEditorIntervalTurns,
+	defaultConventionsDocument,
 	extractResponseText,
 	extractTurnEntries,
+	getCandidateBlocks,
 	keepCandidateBlocks,
+	markCandidatesReviewed,
 	nextTurnCounter,
 	parseDecisionIntervalTurns,
+	parseEditorConfig,
 	selectNewTurns,
+	simpleHash,
 } from "../scribe/core.mjs";
 
 test("parseDecisionIntervalTurns parses valid positive integer", () => {
@@ -19,13 +27,27 @@ test("parseDecisionIntervalTurns falls back on invalid values", () => {
 	assert.equal(parseDecisionIntervalTurns('{"decisionIntervalTurns": 0}', 3), 3);
 	assert.equal(parseDecisionIntervalTurns('{"decisionIntervalTurns": -1}', 3), 3);
 	assert.equal(parseDecisionIntervalTurns('{"decisionIntervalTurns": 2.5}', 3), 3);
-	assert.equal(parseDecisionIntervalTurns('invalid-json', 3), 3);
+	assert.equal(parseDecisionIntervalTurns("invalid-json", 3), 3);
+});
+
+test("parseEditorConfig reads both interval and multiplier", () => {
+	const cfg = parseEditorConfig('{"decisionIntervalTurns":4,"editorRateMultiplier":3}');
+	assert.deepEqual(cfg, { decisionIntervalTurns: 4, editorRateMultiplier: 3 });
+});
+
+test("parseEditorConfig falls back on invalid values", () => {
+	const cfg = parseEditorConfig('{"decisionIntervalTurns":0,"editorRateMultiplier":-1}');
+	assert.deepEqual(cfg, { decisionIntervalTurns: 3, editorRateMultiplier: 3 });
+});
+
+test("computeEditorIntervalTurns multiplies rates", () => {
+	assert.equal(computeEditorIntervalTurns({ decisionIntervalTurns: 5, editorRateMultiplier: 3 }), 15);
 });
 
 test("nextTurnCounter gates execution until interval", () => {
-	assert.deepEqual(nextTurnCounter(0, 3), { turnsSinceLastDecision: 1, shouldRun: false });
-	assert.deepEqual(nextTurnCounter(1, 3), { turnsSinceLastDecision: 2, shouldRun: false });
-	assert.deepEqual(nextTurnCounter(2, 3), { turnsSinceLastDecision: 0, shouldRun: true });
+	assert.deepEqual(nextTurnCounter(0, 3), { turnsSinceLastRun: 1, shouldRun: false });
+	assert.deepEqual(nextTurnCounter(1, 3), { turnsSinceLastRun: 2, shouldRun: false });
+	assert.deepEqual(nextTurnCounter(2, 3), { turnsSinceLastRun: 0, shouldRun: true });
 });
 
 test("extractTurnEntries keeps only user/assistant text blocks", () => {
@@ -62,8 +84,27 @@ test("keepCandidateBlocks removes non-candidate sections", () => {
 	assert.doesNotMatch(output, /Header note/);
 });
 
+test("getCandidateBlocks selects only candidate headings", () => {
+	const decisions = `# Decision Log\n\n### [CANDIDATE] A\ntext\n\n### [REVIEWED] B\ntext\n\n### [CANDIDATE] C\ntext`;
+	assert.deepEqual(getCandidateBlocks(decisions), ["### [CANDIDATE] A\ntext", "### [CANDIDATE] C\ntext"]);
+});
+
+test("markCandidatesReviewed updates all candidate headings", () => {
+	const decisions = `### [CANDIDATE] A\n\n### [CANDIDATE] B`;
+	assert.equal(markCandidatesReviewed(decisions), "### [REVIEWED] A\n\n### [REVIEWED] B");
+});
+
+test("buildPendingDecisionsDocument prepends decision log header", () => {
+	assert.equal(buildPendingDecisionsDocument(["### [CANDIDATE] A"]), "# Decision Log\n\n### [CANDIDATE] A");
+});
+
 test("buildScribePrompt injects recent turns placeholder", () => {
 	assert.equal(buildScribePrompt("x {recentTurns} y", "abc"), "x abc y");
+});
+
+test("buildEditorPrompt injects both placeholders", () => {
+	const template = "cur={currentConventions}\nnew={newCandidates}";
+	assert.equal(buildEditorPrompt(template, "C", "N"), "cur=C\nnew=N");
 });
 
 test("extractResponseText joins text blocks only", () => {
@@ -73,4 +114,17 @@ test("extractResponseText joins text blocks only", () => {
 		{ type: "text", text: "two" },
 	];
 	assert.equal(extractResponseText(content), "one\ntwo");
+});
+
+test("defaultConventionsDocument includes required sections", () => {
+	const doc = defaultConventionsDocument();
+	assert.match(doc, /# Conventions/);
+	assert.match(doc, /## Conflicts Requiring Review/);
+	assert.match(doc, /## Active Decisions/);
+	assert.match(doc, /## Superseded Decisions/);
+});
+
+test("simpleHash stable for same text", () => {
+	assert.equal(simpleHash("abc"), simpleHash("abc"));
+	assert.notEqual(simpleHash("abc"), simpleHash("abcd"));
 });

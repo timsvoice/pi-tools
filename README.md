@@ -8,14 +8,14 @@ Optimize project decision memory for future decision quality by minimizing noise
 
 ## What this does
 
-This repo contains two extensions that run on `agent_end`:
+This repo contains one extension (`.pi/extensions/scribe/`) that runs two pipelines on `agent_end`:
 
-1. **Scribe** (`.pi/extensions/scribe/`)
+1. **Scribe**
    - Reads recent conversation turns.
    - Extracts high-signal project decisions.
    - Appends new decision candidates to `docs/decisions.md` as `### [CANDIDATE] ...` blocks.
 
-2. **Editor** (`.pi/extensions/editor/`)
+2. **Editor**
    - Runs less frequently than scribe.
    - Reads only unreviewed candidate decisions from `docs/decisions.md`.
    - Merges them into the current `docs/conventions.md`.
@@ -26,14 +26,13 @@ This repo contains two extensions that run on `agent_end`:
 
 ## Repository structure
 
-- `.pi/extensions/scribe/index.ts` — scribe runtime wiring and side effects
-- `.pi/extensions/scribe/core.mjs` — pure scribe logic
-- `.pi/extensions/scribe/PROMPT.md` — scribe extraction prompt
-- `.pi/extensions/editor/index.ts` — editor runtime wiring and side effects
-- `.pi/extensions/editor/core.mjs` — pure editor logic
-- `.pi/extensions/editor/PROMPT.md` — editor merge/consolidation prompt
-- `.pi/extensions/editor/CONVENTIONS_TEMPLATE.md` — default conventions doc scaffold
-- `.pi/extensions/decision-pipeline.config.json` — shared cadence config
+- `.pi/extensions/scribe/index.ts` — combined scribe + editor runtime wiring
+- `.pi/extensions/scribe/core.mjs` — shared scribe/editor logic
+- `.pi/extensions/scribe/pipeline.ts` — shared prompt execution pipeline
+- `.pi/extensions/scribe/prompts/scribe.md` — scribe extraction prompt
+- `.pi/extensions/scribe/prompts/editor.md` — editor merge/consolidation prompt
+- `.pi/extensions/scribe/prompts/editor-conventions-template.md` — default conventions doc scaffold
+- `.pi/extensions/scribe.config.json` — shared cadence config
 - `docs/decisions.md` — append-only candidate/reviewed decision log
 - `docs/conventions.md` — canonical consolidated conventions document
 
@@ -43,7 +42,7 @@ This repo contains two extensions that run on `agent_end`:
 
 Edit:
 
-`.pi/extensions/decision-pipeline.config.json`
+`.pi/extensions/scribe.config.json`
 
 ```json
 {
@@ -106,8 +105,7 @@ node --test .pi/extensions/tests/*.test.mjs
 ```
 
 Test files:
-- `.pi/extensions/tests/scribe-core.test.mjs`
-- `.pi/extensions/tests/editor-core.test.mjs`
+- `.pi/extensions/tests/core.test.mjs`
 
 ---
 

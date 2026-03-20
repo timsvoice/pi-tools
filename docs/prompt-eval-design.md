@@ -17,8 +17,8 @@ We need a repeatable evaluation process that:
 
 ## Goals
 1. Establish an offline prompt evaluation loop for both:
-   - `scribe/PROMPT.md` (candidate extraction precision), and
-   - `editor/PROMPT.md` (consolidation/compression quality).
+   - `scribe/prompts/scribe.md` (candidate extraction precision), and
+   - `scribe/prompts/editor.md` (consolidation/compression quality).
 2. Use LLM-as-a-judge rubrics for nuanced quality dimensions.
 3. Add hard-fail checks for known bad patterns.
 4. Enable baseline-vs-candidate prompt comparisons before merges.
