@@ -11,8 +11,8 @@ import {
 } from "@mariozechner/pi-coding-agent";
 import type { ExtensionAPI, ExtensionContext } from "@mariozechner/pi-coding-agent";
 
-const SCRIBE_INTERVAL_TURNS = 1;
-const EDITOR_INTERVAL_TURNS = 3;
+const SCRIBE_INTERVAL_TURNS = 10;
+const EDITOR_INTERVAL_TURNS = 30;
 const baseDir = dirname(fileURLToPath(import.meta.url));
 
 type AgentMessage = { role?: string; content?: unknown };
@@ -325,7 +325,7 @@ export const createAgentEndHandler = (options?: {
 					if (ctx.hasUI) {
 						ctx.ui.setStatus(
 							"scribe-last",
-							formatFooterText(ctx, `Scribe ✓ ${formatTimestamp(now())}`),
+							formatFooterText(ctx, `| Scribe ✓ ${formatTimestamp(now())}`),
 						);
 					}
 				})
@@ -333,7 +333,7 @@ export const createAgentEndHandler = (options?: {
 					if (ctx.hasUI) {
 						ctx.ui.setStatus(
 							"scribe-last",
-							formatFooterText(ctx, `Scribe ✗ ${formatTimestamp(now())}`),
+							formatFooterText(ctx, `| Scribe ✗ ${formatTimestamp(now())}`),
 						);
 					}
 					reportError(ctx, "scribe run", error);

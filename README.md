@@ -8,10 +8,10 @@ Project-local pi extension that captures durable decisions and conventions from 
 
 ## Behavior
 - Runs on `agent_end`.
-- Scribe cadence: every 1 turn (temporary for manual testing).
-- Editor cadence: every 3 turns (temporary for manual testing).
+- Scribe cadence: every 10 turns.
+- Editor cadence: every 30 turns.
 - Working message shows `Scribing...` / `Editorializing...` during runs and clears on completion. Errors show as `Scribe error: ...`.
-- Footer counters show `Scribe X/1` and `Editor Y/3` each turn.
+- Footer counters show `Scribe X/10` and `Editor Y/30` each turn.
 - Footer shows last run status: `Scribe ✓ HH:MM`, `Editor ✓ HH:MM` (or ✗ on failure).
 
 ## Outputs

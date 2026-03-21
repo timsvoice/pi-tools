@@ -154,8 +154,8 @@ test("createAgentEndHandler triggers cadence", async () => {
 		await setImmediate();
 	}
 
-	assert.equal(scribeCalls, 30);
-	assert.equal(editorCalls, 10);
+	assert.equal(scribeCalls, 3);
+	assert.equal(editorCalls, 1);
 });
 
 test("createAgentEndHandler sets counters", async () => {
@@ -184,10 +184,10 @@ test("createAgentEndHandler sets counters", async () => {
 	assert.ok(workingCalls.includes(undefined));
 	assert.ok(statusCalls.some((call) => call[0] === "scribe-last" && call[1] === "Scribe ✓ 12:34"));
 	assert.ok(statusCalls.some((call) => call[0] === "editor-last" && call[1] === "Editor ✓ 12:34"));
-	assert.ok(statusCalls.some((call) => call[0] === "scribe-count" && call[1] === "Scribe 1/1"));
-	assert.ok(statusCalls.some((call) => call[0] === "editor-count" && call[1] === "Editor 1/3"));
-	assert.ok(statusCalls.some((call) => call[0] === "scribe-count" && call[1] === "Scribe 1/1"));
-	assert.ok(statusCalls.some((call) => call[0] === "editor-count" && call[1] === "Editor 3/3"));
+	assert.ok(statusCalls.some((call) => call[0] === "scribe-count" && call[1] === "Scribe 1/10"));
+	assert.ok(statusCalls.some((call) => call[0] === "editor-count" && call[1] === "Editor 1/30"));
+	assert.ok(statusCalls.some((call) => call[0] === "scribe-count" && call[1] === "Scribe 10/10"));
+	assert.ok(statusCalls.some((call) => call[0] === "editor-count" && call[1] === "Editor 30/30"));
 });
 
 test("session_start seeds counter status", async () => {
@@ -211,8 +211,8 @@ test("session_start seeds counter status", async () => {
 	}
 	await sessionStart({}, ctx);
 
-	assert.ok(statusCalls.some((call) => call[0] === "scribe-count" && call[1] === "Scribe 0/1"));
-	assert.ok(statusCalls.some((call) => call[0] === "editor-count" && call[1] === "Editor 0/3"));
+	assert.ok(statusCalls.some((call) => call[0] === "scribe-count" && call[1] === "Scribe 0/10"));
+	assert.ok(statusCalls.some((call) => call[0] === "editor-count" && call[1] === "Editor 0/30"));
 });
 
 test("executePrompt fails fast when model or api key missing", async () => {
