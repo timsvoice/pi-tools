@@ -23,14 +23,14 @@ pi-scribe is a project-local pi extension that captures durable engineering deci
 - Provider credentials are configured externally (settings or `/login`).
 
 ## Functional Requirements
-1. **Cadence**: Run scribe every 10 turns and editor every 30 turns.
+1. **Cadence**: Run scribe every 1 turn and editor every 3 turns (temporary for manual testing).
 2. **Prompting**: Use prompt templates from `.pi/extensions/scribe/prompts/`.
 3. **Input windowing**: Base scribe input on the most recent N user turns, preserving order.
 4. **Outputs**:
    - `docs/DECISIONS.md` is append-only, includes a header when empty.
    - `docs/CONVENTIONS.md` is fully rewritten each editor run.
 5. **UI feedback**: While running, display `Scribing...` or `Editorializing...` in the status line (when `ctx.hasUI`).
-6. **UI counters**: Always show turn counters in the footer: `Scribe X/10` and `Editor Y/30` (when `ctx.hasUI`).
+6. **UI counters**: Always show turn counters in the footer: `Scribe X/1` and `Editor Y/3` (when `ctx.hasUI`).
 7. **Error messaging**: Fail fast with actionable errors (what failed, why, fix path).
 
 ## Non-Functional Requirements
@@ -45,7 +45,7 @@ pi-scribe is a project-local pi extension that captures durable engineering deci
 - **Linting**: Biome `recommended` ruleset; `npm run lint` is required.
 - **Complexity budget**: Max cyclomatic complexity 10 per function (ESLint `complexity` rule).
 - **Diff budget**: Total change ≤ 500 lines, per-file ≤ 200 lines (enforced by `npm run diff-budget`, excluding `package-lock.json`, `docs/`, `.pi/extensions/scribe/prompts/`, and `pi-mono/`).
-- **Security audit**: `npm run audit` (dependency audit, secret scan via gitleaks, SAST via semgrep, SBOM via cyclonedx). Requires `gitleaks` and `semgrep` binaries installed.
+- **Security audit**: `npm run audit` (dependency audit, secret scan via gitleaks, SAST via semgrep, SBOM via cyclonedx). Requires `gitleaks` and `semgrep` binaries installed. SBOM is generated as an untracked artifact under `sbom/`.
 
 ## Project Structure
 - `.pi/extensions/scribe/index.ts`: core extension logic and event handler registration.
@@ -59,8 +59,8 @@ pi-scribe is a project-local pi extension that captures durable engineering deci
 1. `agent_end` fires.
 2. Extension increments an in-memory turn counter.
 3. On cadence:
-   - **Scribe run**: collect recent turns, fill `scribe.md`, call the active model, append to `docs/DECISIONS.md`.
-   - **Editor run**: read `docs/DECISIONS.md`, fill `editor.md`, call the active model, rewrite `docs/CONVENTIONS.md`.
+   - **Scribe run**: collect recent turns, fill `scribe.md`, call the active model, append to `docs/DECISIONS.md` (every turn for manual testing).
+   - **Editor run**: read `docs/DECISIONS.md`, fill `editor.md`, call the active model, rewrite `docs/CONVENTIONS.md` (every 3 turns for manual testing).
 4. Writes are serialized per-file using `withFileMutationQueue()`.
 5. While tasks are running, the UI shows `Scribing...` or `Editorializing...`.
 6. The footer shows counters: `Scribe X/10`, `Editor Y/30`.
@@ -72,7 +72,7 @@ pi-scribe is a project-local pi extension that captures durable engineering deci
 - **Windowing**: count user turns only; ignore non-user/assistant roles.
 - **Output guarding**: enforce size limits; if exceeded, throw with a fix path.
 - **UI feedback**: use `ctx.ui.setStatus("scribe", theme.fg("dim", "Scribing..."))` and `ctx.ui.setStatus("editor", theme.fg("dim", "Editorializing..."))`; clear on completion. Guard with `ctx.hasUI`. Follow the `status-line.ts` pattern (stable keys, clear after).
-- **UI counters**: update `ctx.ui.setStatus("scribe-count", theme.fg("dim", "Scribe X/10"))` and `ctx.ui.setStatus("editor-count", theme.fg("dim", "Editor Y/30"))` on every turn; guard with `ctx.hasUI`.
+- **UI counters**: update `ctx.ui.setStatus("scribe-count", theme.fg("dim", "Scribe X/1"))` and `ctx.ui.setStatus("editor-count", theme.fg("dim", "Editor Y/3"))` on every turn; guard with `ctx.hasUI`.
 - **Reload behavior**: changes to extensions require `/reload` for hot-reload testing (see `reload-runtime.ts`).
 - **Error handling**: catch background errors, log, and optionally notify via `ctx.ui.notify`.
 
@@ -80,7 +80,7 @@ pi-scribe is a project-local pi extension that captures durable engineering deci
 - Decision candidates are appended at the 10-turn cadence without blocking user interaction.
 - Conventions are rewritten at the 30-turn cadence using the editor prompt.
 - Status line updates appear during runs and clear afterward.
-- Footer counters update each turn with `Scribe X/10` and `Editor Y/30`.
+- Footer counters update each turn with `Scribe X/1` and `Editor Y/3`.
 - Output size limits are enforced; over-limit outputs emit actionable errors.
 - Concurrent edits by built-in tools do not race with scribe writes.
 - The extension remains functional with `ctx.hasUI === false`.

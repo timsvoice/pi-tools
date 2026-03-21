@@ -11,8 +11,8 @@ import {
 } from "@mariozechner/pi-coding-agent";
 import type { ExtensionAPI, ExtensionContext } from "@mariozechner/pi-coding-agent";
 
-const SCRIBE_INTERVAL_TURNS = 10;
-const EDITOR_INTERVAL_TURNS = 30;
+const SCRIBE_INTERVAL_TURNS = 1;
+const EDITOR_INTERVAL_TURNS = 3;
 const baseDir = dirname(fileURLToPath(import.meta.url));
 
 type AgentMessage = { role?: string; content?: unknown };
@@ -20,13 +20,21 @@ type AgentMessage = { role?: string; content?: unknown };
 export type PromptExecutor = (prompt: string, ctx: ExtensionContext) => Promise<string>;
 
 export const fillPromptTemplate = (template: string, replacements: Record<string, string>) => {
+	for (const key of Object.keys(replacements)) {
+		if (!template.includes(`{${key}}`)) {
+			throw new Error(`Prompt template missing required placeholder: ${key}.`);
+		}
+	}
+
 	let filled = template;
 	for (const [key, value] of Object.entries(replacements)) {
 		filled = filled.replaceAll(`{${key}}`, value);
 	}
 
-	if (/\{[^}]+\}/.test(filled)) {
-		throw new Error("Prompt template has unresolved placeholder tokens.");
+	for (const key of Object.keys(replacements)) {
+		if (filled.includes(`{${key}}`)) {
+			throw new Error(`Prompt template has unresolved placeholder: ${key}.`);
+		}
 	}
 
 	return filled;

@@ -6,3 +6,6 @@ node_modules/
 
 # Local nested workspace copy (not part of this project)
 pi-mono/
+
+# Security artifacts
+sbom/

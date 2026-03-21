@@ -8,18 +8,23 @@ import {
 	selectRecentMessages,
 } from "../.pi/extensions/scribe/index.ts";
 
-test("fillPromptTemplate replaces placeholders and leaves no tokens", () => {
+test("fillPromptTemplate replaces required placeholders", () => {
 	const template = "Hello {name}, welcome to {place}.";
 	const result = fillPromptTemplate(template, { name: "Ada", place: "Lab" });
 	assert.equal(result, "Hello Ada, welcome to Lab.");
-	assert.equal(/\{[^}]+\}/.test(result), false);
 });
 
-test("fillPromptTemplate throws when placeholders remain", () => {
+test("fillPromptTemplate throws when required placeholder missing", () => {
 	assert.throws(
-		() => fillPromptTemplate("Hello {name} {missing}", { name: "Ada" }),
-		/placeholder/i,
+		() => fillPromptTemplate("Hello {name}", { name: "Ada", place: "Lab" }),
+		/missing required placeholder/i,
 	);
+});
+
+test("fillPromptTemplate allows other braces", () => {
+	const template = "Example {Short title} and {name}.";
+	const result = fillPromptTemplate(template, { name: "Ada" });
+	assert.equal(result, "Example {Short title} and Ada.");
 });
 
 test("selectRecentMessages includes last N user turns with assistants", () => {

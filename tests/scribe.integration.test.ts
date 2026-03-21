@@ -63,7 +63,7 @@ const createContext = (options: {
 test("execScribe appends decisions and uses mutation queue", async () => {
 	const cwd = await createTempDir();
 	const promptPath = join(cwd, "scribe.md");
-	await writeFile(promptPath, "{recentTurns}");
+	await writeFile(promptPath, "{recentTurns} {Short title}");
 	const branch: MessageEntry[] = [
 		{ type: "message", message: { role: "user", content: "u1" } },
 		{ type: "message", message: { role: "assistant", content: "a1" } },
@@ -89,7 +89,7 @@ test("execScribe appends decisions and uses mutation queue", async () => {
 test("execScribe enforces output limits", async () => {
 	const cwd = await createTempDir();
 	const promptPath = join(cwd, "scribe.md");
-	await writeFile(promptPath, "{recentTurns}");
+	await writeFile(promptPath, "{recentTurns} {Short title}");
 	const branch: MessageEntry[] = [{ type: "message", message: { role: "user", content: "u1" } }];
 	const ctx = createContext({ cwd, branch });
 	const huge = "a".repeat(60 * 1024);
@@ -102,7 +102,7 @@ test("execEditor rewrites conventions when decisions exist", async () => {
 	await mkdir(resolve(cwd, "docs"), { recursive: true });
 	await writeFile(resolve(cwd, "docs", "DECISIONS.md"), "# Decisions\n\nDecision");
 	const promptPath = join(cwd, "editor.md");
-	await writeFile(promptPath, "{currentConventions}\n{newCandidates}");
+	await writeFile(promptPath, "{currentConventions}\n{newCandidates}\n{Short title}");
 	const ctx = createContext({ cwd });
 
 	await execEditor(promptPath, ctx, async () => "Convention");
@@ -115,7 +115,7 @@ test("execEditor rewrites conventions when decisions exist", async () => {
 test("execEditor is a no-op when decisions are missing", async () => {
 	const cwd = await createTempDir();
 	const promptPath = join(cwd, "editor.md");
-	await writeFile(promptPath, "{currentConventions}\n{newCandidates}");
+	await writeFile(promptPath, "{currentConventions}\n{newCandidates}\n{Short title}");
 	const ctx = createContext({ cwd });
 
 	await execEditor(promptPath, ctx, async () => "Convention");
@@ -143,10 +143,11 @@ test("createAgentEndHandler triggers cadence", async () => {
 
 	for (let i = 0; i < 30; i += 1) {
 		await handler({}, ctx);
+		await Promise.resolve();
 	}
 
-	assert.equal(scribeCalls, 3);
-	assert.equal(editorCalls, 1);
+	assert.equal(scribeCalls, 30);
+	assert.equal(editorCalls, 10);
 });
 
 test("createAgentEndHandler sets and clears status", async () => {
@@ -164,18 +165,17 @@ test("createAgentEndHandler sets and clears status", async () => {
 
 	for (let i = 0; i < 30; i += 1) {
 		await handler({}, ctx);
+		await Promise.resolve();
 	}
-
-	await Promise.resolve();
 
 	assert.ok(statusCalls.some((call) => call[0] === "scribe" && call[1] === "Scribing..."));
 	assert.ok(statusCalls.some((call) => call[0] === "editor" && call[1] === "Editorializing..."));
 	assert.ok(statusCalls.some((call) => call[0] === "scribe" && call[1] === undefined));
 	assert.ok(statusCalls.some((call) => call[0] === "editor" && call[1] === undefined));
-	assert.ok(statusCalls.some((call) => call[0] === "scribe-count" && call[1] === "Scribe 1/10"));
-	assert.ok(statusCalls.some((call) => call[0] === "editor-count" && call[1] === "Editor 1/30"));
-	assert.ok(statusCalls.some((call) => call[0] === "scribe-count" && call[1] === "Scribe 10/10"));
-	assert.ok(statusCalls.some((call) => call[0] === "editor-count" && call[1] === "Editor 30/30"));
+	assert.ok(statusCalls.some((call) => call[0] === "scribe-count" && call[1] === "Scribe 1/1"));
+	assert.ok(statusCalls.some((call) => call[0] === "editor-count" && call[1] === "Editor 1/3"));
+	assert.ok(statusCalls.some((call) => call[0] === "scribe-count" && call[1] === "Scribe 1/1"));
+	assert.ok(statusCalls.some((call) => call[0] === "editor-count" && call[1] === "Editor 3/3"));
 });
 
 test("session_start seeds counter status", async () => {
@@ -199,8 +199,8 @@ test("session_start seeds counter status", async () => {
 	}
 	await sessionStart({}, ctx);
 
-	assert.ok(statusCalls.some((call) => call[0] === "scribe-count" && call[1] === "Scribe 0/10"));
-	assert.ok(statusCalls.some((call) => call[0] === "editor-count" && call[1] === "Editor 0/30"));
+	assert.ok(statusCalls.some((call) => call[0] === "scribe-count" && call[1] === "Scribe 0/1"));
+	assert.ok(statusCalls.some((call) => call[0] === "editor-count" && call[1] === "Editor 0/3"));
 });
 
 test("executePrompt fails fast when model or api key missing", async () => {

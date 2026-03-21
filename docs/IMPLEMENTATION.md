@@ -85,13 +85,13 @@ Implement a project-local pi extension that captures durable decisions and conve
 - Resolve paths with `resolve(ctx.cwd, ...)` and serialize writes with `withFileMutationQueue()`.
 - Keep logic compatible with `ctx.hasUI === false`.
 - Use stable status keys (`scribe`, `editor`) and clear on completion.
-- Update footer counters each turn via `scribe-count`/`editor-count` keys using `theme.fg("dim", ...)` to match footer text color.
+- Update footer counters each turn via `scribe-count`/`editor-count` keys using `theme.fg("dim", ...)` to match footer text color (currently 1/3 cadence for manual testing).
 
 ## Quality Gates
 - `npm run lint` passes (Biome).
 - `npm run lint:complexity` passes (max cyclomatic complexity 10).
 - `npm run diff-budget` passes (≤ 500 total lines, ≤ 200 lines per file).
-- `npm run audit` passes (dependency audit, gitleaks, semgrep, SBOM generation). Requires `gitleaks` and `semgrep` binaries installed.
+- `npm run audit` passes (dependency audit, gitleaks, semgrep, SBOM generation). Requires `gitleaks` and `semgrep` binaries installed. SBOM output is an untracked artifact under `sbom/`.
 
 ## Acceptance Criteria
 - All tests pass in a closed loop.
