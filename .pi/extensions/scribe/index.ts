@@ -257,7 +257,7 @@ export const execEditor = async (
 	});
 };
 
-export const createAgentEndHandler = (options?: {
+export const createAgentStartHandler = (options?: {
 	promptExecutor?: PromptExecutor;
 	execScribeFn?: typeof execScribe;
 	execEditorFn?: typeof execEditor;
@@ -341,7 +341,7 @@ const main = (pi: ExtensionAPI) => {
 		ctx.ui.setStatus("scribe-count", formatFooterText(ctx, `Scribe 0/${SCRIBE_INTERVAL_TURNS}`));
 		ctx.ui.setStatus("editor-count", formatFooterText(ctx, `Editor 0/${EDITOR_INTERVAL_TURNS}`));
 	});
-	pi.on("agent_end", createAgentEndHandler());
+	pi.on("agent_start", createAgentStartHandler());
 };
 
 export default main;

@@ -7,7 +7,7 @@ Project-local pi extension that captures durable decisions and conventions from 
 - Start pi from the repo root and run `/reload` to hot-load changes.
 
 ## Behavior
-- Runs on `agent_end`.
+- Runs on `agent_start`.
 - Scribe cadence: every 1 turn (temporary for manual testing).
 - Editor cadence: every 3 turns (temporary for manual testing).
 - Working message shows `Scribing...` / `Editorializing...` during runs.

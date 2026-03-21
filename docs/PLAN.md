@@ -1,7 +1,7 @@
 # Plan and Requirements: pi-scribe
 
 ## Purpose
-pi-scribe is a project-local pi extension that captures durable engineering decisions and conventions from conversation history. It runs on `agent_end` events, synthesizes recent turns into candidate decisions, and curates a high-signal `docs/CONVENTIONS.md` document. The goal is to preserve long-lived project rules while minimizing noise.
+pi-scribe is a project-local pi extension that captures durable engineering decisions and conventions from conversation history. It runs on `agent_start` events, synthesizes recent turns into candidate decisions, and curates a high-signal `docs/CONVENTIONS.md` document. The goal is to preserve long-lived project rules while minimizing noise.
 
 ## Scope
 ### In scope
@@ -56,7 +56,7 @@ pi-scribe is a project-local pi extension that captures durable engineering deci
 - `docs/CONVENTIONS.md`: curated, compact set of active conventions.
 
 ## Architecture (Runtime Flow)
-1. `agent_end` fires.
+1. `agent_start` fires.
 2. Extension increments an in-memory turn counter.
 3. On cadence:
    - **Scribe run**: collect recent turns, fill `scribe.md`, call the active model, append to `docs/DECISIONS.md` (every turn for manual testing).
@@ -66,7 +66,7 @@ pi-scribe is a project-local pi extension that captures durable engineering deci
 6. The footer shows counters: `Scribe X/10`, `Editor Y/30`.
 
 ## Implementation Notes
-- **Event handler**: `pi.on("agent_end", handler)`; run scribe/editor asynchronously.
+- **Event handler**: `pi.on("agent_start", handler)`; run scribe/editor asynchronously.
 - **Model execution**: use `ctx.model` and `ctx.modelRegistry.getApiKey()`; throw when missing.
 - **Prompt templating**: replace `{recentTurns}`, `{currentConventions}`, `{newCandidates}`; never emit placeholders.
 - **Windowing**: count user turns only; ignore non-user/assistant roles.

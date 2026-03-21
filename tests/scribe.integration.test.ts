@@ -4,7 +4,7 @@ import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
 import { test } from "node:test";
 import {
-	createAgentEndHandler,
+	createAgentStartHandler,
 	execEditor,
 	execScribe,
 	executePrompt,
@@ -129,13 +129,13 @@ test("execEditor is a no-op when decisions are missing", async () => {
 	await assert.rejects(() => readFile(resolve(cwd, "docs", "CONVENTIONS.md"), "utf-8"), /ENOENT/);
 });
 
-test("createAgentEndHandler triggers cadence", async () => {
+test("createAgentStartHandler triggers cadence", async () => {
 	const cwd = await createTempDir();
 	const ctx = createContext({ cwd, hasUI: false });
 	let scribeCalls = 0;
 	let editorCalls = 0;
 
-	const handler = createAgentEndHandler({
+	const handler = createAgentStartHandler({
 		execScribeFn: async () => {
 			scribeCalls += 1;
 		},
@@ -156,13 +156,13 @@ test("createAgentEndHandler triggers cadence", async () => {
 	assert.equal(editorCalls, 10);
 });
 
-test("createAgentEndHandler sets and clears status", async () => {
+test("createAgentStartHandler sets and clears status", async () => {
 	const cwd = await createTempDir();
 	const statusCalls: Array<[string, string | undefined]> = [];
 	const workingCalls: Array<string | undefined> = [];
 	const ctx = createContext({ cwd, statusCalls, workingCalls });
 
-	const handler = createAgentEndHandler({
+	const handler = createAgentStartHandler({
 		execScribeFn: async () => undefined,
 		execEditorFn: async () => undefined,
 		promptExecutor: async () => "",
