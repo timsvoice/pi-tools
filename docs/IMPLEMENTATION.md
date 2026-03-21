@@ -85,6 +85,7 @@ Implement a project-local pi extension that captures durable decisions and conve
 - Resolve paths with `resolve(ctx.cwd, ...)` and serialize writes with `withFileMutationQueue()`.
 - Keep logic compatible with `ctx.hasUI === false`.
 - Use stable status keys (`scribe`, `editor`) and clear on completion.
+- Update footer counters each turn via `scribe-count`/`editor-count` keys.
 
 ## Quality Gates
 - `npm run lint` passes (Biome).

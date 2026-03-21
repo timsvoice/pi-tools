@@ -266,6 +266,13 @@ export const createAgentEndHandler = (options?: {
 		const scribeFn = options?.execScribeFn ?? execScribe;
 		const editorFn = options?.execEditorFn ?? execEditor;
 
+		if (ctx.hasUI) {
+			const scribeStep = turnCount % SCRIBE_INTERVAL_TURNS || SCRIBE_INTERVAL_TURNS;
+			const editorStep = turnCount % EDITOR_INTERVAL_TURNS || EDITOR_INTERVAL_TURNS;
+			ctx.ui.setStatus("scribe-count", `Scribe ${scribeStep}/${SCRIBE_INTERVAL_TURNS}`);
+			ctx.ui.setStatus("editor-count", `Editor ${editorStep}/${EDITOR_INTERVAL_TURNS}`);
+		}
+
 		if (turnCount % SCRIBE_INTERVAL_TURNS === 0 && !scribeRunning) {
 			scribeRunning = true;
 			if (ctx.hasUI) {
