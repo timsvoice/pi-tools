@@ -1,0 +1,55 @@
+name: ci
+
+on:
+  push:
+    branches: ["main"]
+  pull_request:
+
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: "20.16.0"
+          cache: "npm"
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Lint
+        run: npm run lint
+
+      - name: Complexity
+        run: npm run lint:complexity
+
+      - name: Test
+        run: npm test
+
+      - name: Diff budget
+        run: npm run diff-budget
+
+      - name: Dependency audit
+        run: npm run audit:deps
+
+      - name: Install semgrep
+        run: python -m pip install --upgrade pip semgrep
+
+      - name: SAST
+        run: npm run audit:sast
+
+      - name: SBOM
+        run: npm run audit:sbom
+
+      - name: Gitleaks
+        uses: gitleaks/gitleaks-action@v2
+        with:
+          args: "--config .gitleaks.toml --verbose"

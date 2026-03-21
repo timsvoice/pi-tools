@@ -32,7 +32,7 @@ pi-scribe is a project-local pi extension that captures durable engineering deci
 5. **UI feedback**: While running, display `Scribing...` or `Editorializing...` via the working message indicator (clears on completion).
 6. **UI counters**: Always show turn counters in the footer: `Scribe X/1` and `Editor Y/3` (when `ctx.hasUI`).
 7. **Run status**: Show last run outcome + timestamp in the footer (e.g., `Scribe ✓ 12:34`, `Editor ✗ 12:34`).
-8. **Error messaging**: Fail fast with actionable errors (what failed, why, fix path).
+8. **Error messaging**: Fail fast with actionable errors and surface them in the working message indicator for debugging.
 
 ## Non-Functional Requirements
 - **Safety**: Serialize file mutations with `withFileMutationQueue()`.
@@ -76,7 +76,7 @@ pi-scribe is a project-local pi extension that captures durable engineering deci
 - **UI counters**: update `ctx.ui.setStatus("scribe-count", theme.fg("dim", "Scribe X/1"))` and `ctx.ui.setStatus("editor-count", theme.fg("dim", "Editor Y/3"))` on every turn; guard with `ctx.hasUI`.
 - **Run status**: update `ctx.ui.setStatus("scribe-last", theme.fg("dim", "Scribe ✓ HH:MM"))` and `ctx.ui.setStatus("editor-last", theme.fg("dim", "Editor ✓ HH:MM"))` on completion (or ✗ on failure).
 - **Reload behavior**: changes to extensions require `/reload` for hot-reload testing (see `reload-runtime.ts`).
-- **Error handling**: catch background errors, log, and optionally notify via `ctx.ui.notify`.
+- **Error handling**: catch background errors, log, notify via `ctx.ui.notify`, and surface a working-message error string.
 
 ## Acceptance Criteria
 - Decision candidates are appended at the 1-turn cadence without blocking user interaction (temporary for manual testing).

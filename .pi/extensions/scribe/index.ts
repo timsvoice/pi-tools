@@ -140,6 +140,9 @@ const reportError = (ctx: ExtensionContext, scope: string, error: unknown) => {
 	if (ctx.hasUI) {
 		ctx.ui.notify(`Scribe extension ${scope} failed: ${message}`, "error");
 	}
+	if (ctx.hasUI) {
+		ctx.ui.setWorkingMessage(`Scribe error: ${message}`);
+	}
 };
 
 const formatFooterText = (ctx: ExtensionContext, text: string) =>
