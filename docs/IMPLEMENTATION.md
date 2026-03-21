@@ -84,7 +84,7 @@ Implement a project-local pi extension that captures durable decisions and conve
 - Enforce output limits (lines/bytes) before writing; throw with fix path when exceeded.
 - Resolve paths with `resolve(ctx.cwd, ...)` and serialize writes with `withFileMutationQueue()`.
 - Keep logic compatible with `ctx.hasUI === false`.
-- Use stable status keys (`scribe`, `editor`) and clear on completion.
+- Use `ctx.ui.setWorkingMessage()` for run feedback and clear on completion.
 - Update footer counters each turn via `scribe-count`/`editor-count` keys using `theme.fg("dim", ...)` to match footer text color (currently 1/3 cadence for manual testing).
 
 ## Quality Gates

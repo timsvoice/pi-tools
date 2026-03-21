@@ -29,7 +29,7 @@ pi-scribe is a project-local pi extension that captures durable engineering deci
 4. **Outputs**:
    - `docs/DECISIONS.md` is append-only, includes a header when empty.
    - `docs/CONVENTIONS.md` is fully rewritten each editor run.
-5. **UI feedback**: While running, display `Scribing...` or `Editorializing...` in the status line (when `ctx.hasUI`).
+5. **UI feedback**: While running, display `Scribing...` or `Editorializing...` via the working message indicator (when `ctx.hasUI`).
 6. **UI counters**: Always show turn counters in the footer: `Scribe X/1` and `Editor Y/3` (when `ctx.hasUI`).
 7. **Error messaging**: Fail fast with actionable errors (what failed, why, fix path).
 
@@ -71,15 +71,15 @@ pi-scribe is a project-local pi extension that captures durable engineering deci
 - **Prompt templating**: replace `{recentTurns}`, `{currentConventions}`, `{newCandidates}`; never emit placeholders.
 - **Windowing**: count user turns only; ignore non-user/assistant roles.
 - **Output guarding**: enforce size limits; if exceeded, throw with a fix path.
-- **UI feedback**: use `ctx.ui.setStatus("scribe", theme.fg("dim", "Scribing..."))` and `ctx.ui.setStatus("editor", theme.fg("dim", "Editorializing..."))`; clear on completion. Guard with `ctx.hasUI`. Follow the `status-line.ts` pattern (stable keys, clear after).
+- **UI feedback**: use `ctx.ui.setWorkingMessage("Scribing...")` / `ctx.ui.setWorkingMessage("Editorializing...")`; clear by calling `ctx.ui.setWorkingMessage()`. Guard with `ctx.hasUI`.
 - **UI counters**: update `ctx.ui.setStatus("scribe-count", theme.fg("dim", "Scribe X/1"))` and `ctx.ui.setStatus("editor-count", theme.fg("dim", "Editor Y/3"))` on every turn; guard with `ctx.hasUI`.
 - **Reload behavior**: changes to extensions require `/reload` for hot-reload testing (see `reload-runtime.ts`).
 - **Error handling**: catch background errors, log, and optionally notify via `ctx.ui.notify`.
 
 ## Acceptance Criteria
-- Decision candidates are appended at the 10-turn cadence without blocking user interaction.
-- Conventions are rewritten at the 30-turn cadence using the editor prompt.
-- Status line updates appear during runs and clear afterward.
+- Decision candidates are appended at the 1-turn cadence without blocking user interaction (temporary for manual testing).
+- Conventions are rewritten at the 3-turn cadence using the editor prompt (temporary for manual testing).
+- Working message updates appear during runs and clear afterward.
 - Footer counters update each turn with `Scribe X/1` and `Editor Y/3`.
 - Output size limits are enforced; over-limit outputs emit actionable errors.
 - Concurrent edits by built-in tools do not race with scribe writes.
@@ -102,7 +102,7 @@ pi-scribe is a project-local pi extension that captures durable engineering deci
 - Manual interactive run in pi; verify cadence and file outputs.
 - Induce missing model/API key to confirm error messaging.
 - Concurrent edit with `write` tool to confirm no race corruption.
-- Verify status line updates follow the `status-line.ts` behavior (stable key, cleared).
+- Verify working message updates clear when runs complete.
 
 ## Rollout / Rollback
 - Rollout: update `.pi/extensions/scribe/index.ts` and reload extensions (`/reload`, see `reload-runtime.ts`).

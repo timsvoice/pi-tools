@@ -18,6 +18,7 @@ type StubContext = {
 	ui: {
 		theme?: { fg: (token: string, text: string) => string };
 		setStatus: (key: string, value?: string) => void;
+		setWorkingMessage: (message?: string) => void;
 		notify: (message: string, level: "info" | "warning" | "error") => void;
 	};
 	model?: { provider: string; id: string } | null;
@@ -36,8 +37,10 @@ const createContext = (options: {
 	model?: { provider: string; id: string } | null;
 	apiKey?: string | null;
 	statusCalls?: Array<[string, string | undefined]>;
+	workingCalls?: Array<string | undefined>;
 }) => {
 	const calls = options.statusCalls ?? [];
+	const workingCalls = options.workingCalls ?? [];
 	return {
 		cwd: options.cwd,
 		hasUI: options.hasUI ?? true,
@@ -47,6 +50,9 @@ const createContext = (options: {
 			},
 			setStatus: (key: string, value?: string) => {
 				calls.push([key, value]);
+			},
+			setWorkingMessage: (message?: string) => {
+				workingCalls.push(message);
 			},
 			notify: () => undefined,
 		},
@@ -153,7 +159,8 @@ test("createAgentEndHandler triggers cadence", async () => {
 test("createAgentEndHandler sets and clears status", async () => {
 	const cwd = await createTempDir();
 	const statusCalls: Array<[string, string | undefined]> = [];
-	const ctx = createContext({ cwd, statusCalls });
+	const workingCalls: Array<string | undefined> = [];
+	const ctx = createContext({ cwd, statusCalls, workingCalls });
 
 	const handler = createAgentEndHandler({
 		execScribeFn: async () => undefined,
@@ -168,10 +175,9 @@ test("createAgentEndHandler sets and clears status", async () => {
 		await Promise.resolve();
 	}
 
-	assert.ok(statusCalls.some((call) => call[0] === "scribe" && call[1] === "Scribing..."));
-	assert.ok(statusCalls.some((call) => call[0] === "editor" && call[1] === "Editorializing..."));
-	assert.ok(statusCalls.some((call) => call[0] === "scribe" && call[1] === undefined));
-	assert.ok(statusCalls.some((call) => call[0] === "editor" && call[1] === undefined));
+	assert.ok(workingCalls.includes("Scribing..."));
+	assert.ok(workingCalls.includes("Editorializing..."));
+	assert.ok(workingCalls.includes(undefined));
 	assert.ok(statusCalls.some((call) => call[0] === "scribe-count" && call[1] === "Scribe 1/1"));
 	assert.ok(statusCalls.some((call) => call[0] === "editor-count" && call[1] === "Editor 1/3"));
 	assert.ok(statusCalls.some((call) => call[0] === "scribe-count" && call[1] === "Scribe 1/1"));

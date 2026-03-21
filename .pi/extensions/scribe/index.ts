@@ -290,37 +290,44 @@ export const createAgentEndHandler = (options?: {
 			);
 		}
 
+		const updateWorkingMessage = () => {
+			if (!ctx.hasUI) {
+				return;
+			}
+			if (editorRunning) {
+				ctx.ui.setWorkingMessage("Editorializing...");
+				return;
+			}
+			if (scribeRunning) {
+				ctx.ui.setWorkingMessage("Scribing...");
+				return;
+			}
+			ctx.ui.setWorkingMessage();
+		};
+
 		if (turnCount % SCRIBE_INTERVAL_TURNS === 0 && !scribeRunning) {
 			scribeRunning = true;
-			if (ctx.hasUI) {
-				ctx.ui.setStatus("scribe", formatFooterText(ctx, "Scribing..."));
-			}
+			updateWorkingMessage();
 			void scribeFn(scribePath, ctx, SCRIBE_INTERVAL_TURNS, promptExecutor)
 				.catch((error) => {
 					reportError(ctx, "scribe run", error);
 				})
 				.finally(() => {
-					if (ctx.hasUI) {
-						ctx.ui.setStatus("scribe", undefined);
-					}
 					scribeRunning = false;
+					updateWorkingMessage();
 				});
 		}
 
 		if (turnCount % EDITOR_INTERVAL_TURNS === 0 && !editorRunning) {
 			editorRunning = true;
-			if (ctx.hasUI) {
-				ctx.ui.setStatus("editor", formatFooterText(ctx, "Editorializing..."));
-			}
+			updateWorkingMessage();
 			void editorFn(editorPath, ctx, promptExecutor)
 				.catch((error) => {
 					reportError(ctx, "editor run", error);
 				})
 				.finally(() => {
-					if (ctx.hasUI) {
-						ctx.ui.setStatus("editor", undefined);
-					}
 					editorRunning = false;
+					updateWorkingMessage();
 				});
 		}
 	};
