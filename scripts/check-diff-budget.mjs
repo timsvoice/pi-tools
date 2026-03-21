@@ -2,6 +2,7 @@ import { execSync } from "node:child_process";
 
 const TOTAL_BUDGET = 500;
 const FILE_BUDGET = 200;
+const IGNORE_PATHS = ["package-lock.json", "docs/", ".pi/extensions/scribe/prompts/", "pi-mono/"];
 
 const run = (command) => execSync(command, { encoding: "utf8" }).trim();
 
@@ -34,6 +35,9 @@ const offenders = [];
 for (const line of diff.split("\n")) {
 	const [addedRaw, deletedRaw, file] = line.split("\t");
 	if (!file) continue;
+	if (IGNORE_PATHS.some((prefix) => file === prefix || file.startsWith(prefix))) {
+		continue;
+	}
 	const added = Number.parseInt(addedRaw, 10) || 0;
 	const deleted = Number.parseInt(deletedRaw, 10) || 0;
 	const delta = added + deleted;

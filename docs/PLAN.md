@@ -43,7 +43,7 @@ pi-scribe is a project-local pi extension that captures durable engineering deci
 ## Quality Gates
 - **Linting**: Biome `recommended` ruleset; `npm run lint` is required.
 - **Complexity budget**: Max cyclomatic complexity 10 per function (ESLint `complexity` rule).
-- **Diff budget**: Total change ≤ 500 lines, per-file ≤ 200 lines (enforced by `npm run diff-budget`).
+- **Diff budget**: Total change ≤ 500 lines, per-file ≤ 200 lines (enforced by `npm run diff-budget`, excluding `package-lock.json`, `docs/`, `.pi/extensions/scribe/prompts/`, and `pi-mono/`).
 
 ## Project Structure
 - `.pi/extensions/scribe/index.ts`: core extension logic and event handler registration.

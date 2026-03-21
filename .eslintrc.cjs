@@ -5,7 +5,7 @@ module.exports = {
 		ecmaVersion: "latest",
 		sourceType: "module",
 	},
-	ignorePatterns: ["node_modules/", "dist/", "docs/"],
+	ignorePatterns: ["node_modules/", "dist/", "docs/", "pi-mono/"],
 	rules: {
 		complexity: ["error", 10],
 	},

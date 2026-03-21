@@ -6,12 +6,17 @@
 		"lint": "biome check .",
 		"lint:fix": "biome check --write .",
 		"lint:complexity": "eslint . --ext .ts",
-		"diff-budget": "node ./scripts/check-diff-budget.mjs"
+		"diff-budget": "node ./scripts/check-diff-budget.mjs",
+		"test": "node --test --import tsx $(find tests -name \"*.test.ts\")"
 	},
 	"devDependencies": {
 		"@biomejs/biome": "^1.8.3",
+		"@mariozechner/pi-ai": "^0.61.0",
+		"@mariozechner/pi-coding-agent": "^0.61.0",
 		"@typescript-eslint/parser": "^7.18.0",
 		"eslint": "^8.57.0",
+		"fast-check": "^3.22.0",
+		"tsx": "^4.19.2",
 		"typescript": "^5.5.4"
 	}
 }
