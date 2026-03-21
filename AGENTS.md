@@ -40,6 +40,7 @@ When possible, separate refactors from behavior changes.
 - Never commit secrets.
 - Use environment variables or secret managers.
 - Redact sensitive values and PII in logs and artifacts by default.
+- Conduct a security audit before every commit
 
 ## Communication Style
 

@@ -134,6 +134,9 @@ const reportError = (ctx: ExtensionContext, scope: string, error: unknown) => {
 	}
 };
 
+const formatFooterText = (ctx: ExtensionContext, text: string) =>
+	ctx.ui.theme ? ctx.ui.theme.fg("dim", text) : text;
+
 export const buildDecisionsContent = (existing: string, output: string): string | null => {
 	const trimmedOutput = output.trim();
 	if (!trimmedOutput) {
@@ -269,14 +272,20 @@ export const createAgentEndHandler = (options?: {
 		if (ctx.hasUI) {
 			const scribeStep = turnCount % SCRIBE_INTERVAL_TURNS || SCRIBE_INTERVAL_TURNS;
 			const editorStep = turnCount % EDITOR_INTERVAL_TURNS || EDITOR_INTERVAL_TURNS;
-			ctx.ui.setStatus("scribe-count", `Scribe ${scribeStep}/${SCRIBE_INTERVAL_TURNS}`);
-			ctx.ui.setStatus("editor-count", `Editor ${editorStep}/${EDITOR_INTERVAL_TURNS}`);
+			ctx.ui.setStatus(
+				"scribe-count",
+				formatFooterText(ctx, `Scribe ${scribeStep}/${SCRIBE_INTERVAL_TURNS}`),
+			);
+			ctx.ui.setStatus(
+				"editor-count",
+				formatFooterText(ctx, `Editor ${editorStep}/${EDITOR_INTERVAL_TURNS}`),
+			);
 		}
 
 		if (turnCount % SCRIBE_INTERVAL_TURNS === 0 && !scribeRunning) {
 			scribeRunning = true;
 			if (ctx.hasUI) {
-				ctx.ui.setStatus("scribe", "Scribing...");
+				ctx.ui.setStatus("scribe", formatFooterText(ctx, "Scribing..."));
 			}
 			void scribeFn(scribePath, ctx, SCRIBE_INTERVAL_TURNS, promptExecutor)
 				.catch((error) => {
@@ -293,7 +302,7 @@ export const createAgentEndHandler = (options?: {
 		if (turnCount % EDITOR_INTERVAL_TURNS === 0 && !editorRunning) {
 			editorRunning = true;
 			if (ctx.hasUI) {
-				ctx.ui.setStatus("editor", "Editorializing...");
+				ctx.ui.setStatus("editor", formatFooterText(ctx, "Editorializing..."));
 			}
 			void editorFn(editorPath, ctx, promptExecutor)
 				.catch((error) => {
@@ -310,6 +319,13 @@ export const createAgentEndHandler = (options?: {
 };
 
 const main = (pi: ExtensionAPI) => {
+	pi.on("session_start", async (_event, ctx) => {
+		if (!ctx.hasUI) {
+			return;
+		}
+		ctx.ui.setStatus("scribe-count", formatFooterText(ctx, `Scribe 0/${SCRIBE_INTERVAL_TURNS}`));
+		ctx.ui.setStatus("editor-count", formatFooterText(ctx, `Editor 0/${EDITOR_INTERVAL_TURNS}`));
+	});
 	pi.on("agent_end", createAgentEndHandler());
 };
 

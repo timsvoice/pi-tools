@@ -7,10 +7,17 @@
 		"lint:fix": "biome check --write .",
 		"lint:complexity": "eslint . --ext .ts",
 		"diff-budget": "node ./scripts/check-diff-budget.mjs",
-		"test": "node --test --import tsx $(find tests -name \"*.test.ts\")"
+		"test": "node --test --import tsx $(find tests -name \"*.test.ts\")",
+		"audit": "npm run audit:deps && npm run audit:secrets && npm run audit:sast && npm run audit:sbom",
+		"audit:deps": "npm audit --omit=dev",
+		"audit:deps:all": "npm audit",
+		"audit:secrets": "gitleaks detect --source . --no-git",
+		"audit:sast": "semgrep --config=auto",
+		"audit:sbom": "cyclonedx-npm --omit dev --output-file sbom/sbom.json"
 	},
 	"devDependencies": {
 		"@biomejs/biome": "^1.8.3",
+		"@cyclonedx/cyclonedx-npm": "^4.2.1",
 		"@mariozechner/pi-ai": "^0.61.0",
 		"@mariozechner/pi-coding-agent": "^0.61.0",
 		"@typescript-eslint/parser": "^7.18.0",

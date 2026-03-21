@@ -16,6 +16,7 @@ type StubContext = {
 	cwd: string;
 	hasUI: boolean;
 	ui: {
+		theme?: { fg: (token: string, text: string) => string };
 		setStatus: (key: string, value?: string) => void;
 		notify: (message: string, level: "info" | "warning" | "error") => void;
 	};
@@ -41,6 +42,9 @@ const createContext = (options: {
 		cwd: options.cwd,
 		hasUI: options.hasUI ?? true,
 		ui: {
+			theme: {
+				fg: (_token: string, text: string) => text,
+			},
 			setStatus: (key: string, value?: string) => {
 				calls.push([key, value]);
 			},
@@ -172,6 +176,31 @@ test("createAgentEndHandler sets and clears status", async () => {
 	assert.ok(statusCalls.some((call) => call[0] === "editor-count" && call[1] === "Editor 1/30"));
 	assert.ok(statusCalls.some((call) => call[0] === "scribe-count" && call[1] === "Scribe 10/10"));
 	assert.ok(statusCalls.some((call) => call[0] === "editor-count" && call[1] === "Editor 30/30"));
+});
+
+test("session_start seeds counter status", async () => {
+	const cwd = await createTempDir();
+	const statusCalls: Array<[string, string | undefined]> = [];
+	const ctx = createContext({ cwd, statusCalls });
+	let sessionStart: ((event: unknown, ctx: StubContext) => Promise<void>) | null = null;
+	const pi = {
+		on: (event: string, handler: (event: unknown, ctx: StubContext) => Promise<void>) => {
+			if (event === "session_start") {
+				sessionStart = handler;
+			}
+		},
+	};
+
+	const extension = await import("../.pi/extensions/scribe/index.ts");
+	extension.default(pi as unknown as { on: typeof pi.on });
+
+	if (!sessionStart) {
+		throw new Error("session_start handler not registered");
+	}
+	await sessionStart({}, ctx);
+
+	assert.ok(statusCalls.some((call) => call[0] === "scribe-count" && call[1] === "Scribe 0/10"));
+	assert.ok(statusCalls.some((call) => call[0] === "editor-count" && call[1] === "Editor 0/30"));
 });
 
 test("executePrompt fails fast when model or api key missing", async () => {

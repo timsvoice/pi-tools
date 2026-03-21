@@ -1,0 +1,12 @@
+title = "pi-scribe gitleaks config"
+
+[allowlist]
+  description = "Allow test fixtures and common placeholders"
+  regexes = [
+    "(?i)example[_-]?key",
+    "(?i)dummy[_-]?token",
+    "(?i)placeholder[_-]?secret"
+  ]
+  paths = [
+    "tests/"
+  ]

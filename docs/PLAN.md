@@ -45,6 +45,7 @@ pi-scribe is a project-local pi extension that captures durable engineering deci
 - **Linting**: Biome `recommended` ruleset; `npm run lint` is required.
 - **Complexity budget**: Max cyclomatic complexity 10 per function (ESLint `complexity` rule).
 - **Diff budget**: Total change ≤ 500 lines, per-file ≤ 200 lines (enforced by `npm run diff-budget`, excluding `package-lock.json`, `docs/`, `.pi/extensions/scribe/prompts/`, and `pi-mono/`).
+- **Security audit**: `npm run audit` (dependency audit, secret scan via gitleaks, SAST via semgrep, SBOM via cyclonedx). Requires `gitleaks` and `semgrep` binaries installed.
 
 ## Project Structure
 - `.pi/extensions/scribe/index.ts`: core extension logic and event handler registration.
@@ -70,8 +71,8 @@ pi-scribe is a project-local pi extension that captures durable engineering deci
 - **Prompt templating**: replace `{recentTurns}`, `{currentConventions}`, `{newCandidates}`; never emit placeholders.
 - **Windowing**: count user turns only; ignore non-user/assistant roles.
 - **Output guarding**: enforce size limits; if exceeded, throw with a fix path.
-- **UI feedback**: use `ctx.ui.setStatus("scribe", "Scribing...")` and `ctx.ui.setStatus("editor", "Editorializing...")`; clear on completion. Guard with `ctx.hasUI`. Follow the `status-line.ts` pattern (stable keys, clear after).
-- **UI counters**: update `ctx.ui.setStatus("scribe-count", "Scribe X/10")` and `ctx.ui.setStatus("editor-count", "Editor Y/30")` on every turn; guard with `ctx.hasUI`.
+- **UI feedback**: use `ctx.ui.setStatus("scribe", theme.fg("dim", "Scribing..."))` and `ctx.ui.setStatus("editor", theme.fg("dim", "Editorializing..."))`; clear on completion. Guard with `ctx.hasUI`. Follow the `status-line.ts` pattern (stable keys, clear after).
+- **UI counters**: update `ctx.ui.setStatus("scribe-count", theme.fg("dim", "Scribe X/10"))` and `ctx.ui.setStatus("editor-count", theme.fg("dim", "Editor Y/30"))` on every turn; guard with `ctx.hasUI`.
 - **Reload behavior**: changes to extensions require `/reload` for hot-reload testing (see `reload-runtime.ts`).
 - **Error handling**: catch background errors, log, and optionally notify via `ctx.ui.notify`.
 
