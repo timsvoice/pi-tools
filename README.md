@@ -12,6 +12,7 @@ Project-local pi extension that captures durable decisions and conventions from 
 - Editor cadence: every 3 turns (temporary for manual testing).
 - Working message shows `Scribing...` / `Editorializing...` during runs and clears on completion.
 - Footer counters show `Scribe X/1` and `Editor Y/3` each turn.
+- Footer shows last run status: `Scribe ✓ HH:MM`, `Editor ✓ HH:MM` (or ✗ on failure).
 
 ## Outputs
 - `docs/DECISIONS.md` (append-only, header on first write)

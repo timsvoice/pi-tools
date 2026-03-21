@@ -3,6 +3,7 @@ import { mkdir, mkdtemp, readFile, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
 import { test } from "node:test";
+import { setImmediate } from "node:timers/promises";
 import {
 	createAgentEndHandler,
 	execEditor,
@@ -145,11 +146,12 @@ test("createAgentEndHandler triggers cadence", async () => {
 		promptExecutor: async () => "",
 		scribePromptPath: join(cwd, "scribe.md"),
 		editorPromptPath: join(cwd, "editor.md"),
+		now: () => new Date(2026, 0, 1, 12, 34).getTime(),
 	});
 
 	for (let i = 0; i < 30; i += 1) {
 		await handler({}, ctx);
-		await Promise.resolve();
+		await setImmediate();
 	}
 
 	assert.equal(scribeCalls, 30);
@@ -168,16 +170,20 @@ test("createAgentEndHandler sets counters", async () => {
 		promptExecutor: async () => "",
 		scribePromptPath: join(cwd, "scribe.md"),
 		editorPromptPath: join(cwd, "editor.md"),
+		now: () => new Date(2026, 0, 1, 12, 34).getTime(),
 	});
 
 	for (let i = 0; i < 30; i += 1) {
 		await handler({}, ctx);
-		await Promise.resolve();
+		await setImmediate();
 	}
+	await setImmediate();
 
 	assert.ok(workingCalls.includes("Scribing..."));
 	assert.ok(workingCalls.includes("Editorializing..."));
 	assert.ok(workingCalls.includes(undefined));
+	assert.ok(statusCalls.some((call) => call[0] === "scribe-last" && call[1] === "Scribe ✓ 12:34"));
+	assert.ok(statusCalls.some((call) => call[0] === "editor-last" && call[1] === "Editor ✓ 12:34"));
 	assert.ok(statusCalls.some((call) => call[0] === "scribe-count" && call[1] === "Scribe 1/1"));
 	assert.ok(statusCalls.some((call) => call[0] === "editor-count" && call[1] === "Editor 1/3"));
 	assert.ok(statusCalls.some((call) => call[0] === "scribe-count" && call[1] === "Scribe 1/1"));

@@ -145,6 +145,13 @@ const reportError = (ctx: ExtensionContext, scope: string, error: unknown) => {
 const formatFooterText = (ctx: ExtensionContext, text: string) =>
 	ctx.ui.theme ? ctx.ui.theme.fg("dim", text) : text;
 
+const formatTimestamp = (timestamp: number) => {
+	const date = new Date(timestamp);
+	const hours = date.getHours().toString().padStart(2, "0");
+	const minutes = date.getMinutes().toString().padStart(2, "0");
+	return `${hours}:${minutes}`;
+};
+
 export const buildDecisionsContent = (existing: string, output: string): string | null => {
 	const trimmedOutput = output.trim();
 	if (!trimmedOutput) {
@@ -263,6 +270,7 @@ export const createAgentEndHandler = (options?: {
 	execEditorFn?: typeof execEditor;
 	scribePromptPath?: string;
 	editorPromptPath?: string;
+	now?: () => number;
 }) => {
 	let turnCount = 0;
 	let scribeRunning = false;
@@ -276,6 +284,7 @@ export const createAgentEndHandler = (options?: {
 		const promptExecutor = options?.promptExecutor ?? executePrompt;
 		const scribeFn = options?.execScribeFn ?? execScribe;
 		const editorFn = options?.execEditorFn ?? execEditor;
+		const now = options?.now ?? Date.now;
 
 		if (ctx.hasUI) {
 			const scribeStep = turnCount % SCRIBE_INTERVAL_TURNS || SCRIBE_INTERVAL_TURNS;
@@ -309,7 +318,21 @@ export const createAgentEndHandler = (options?: {
 			scribeRunning = true;
 			updateWorkingMessage();
 			void scribeFn(scribePath, ctx, SCRIBE_INTERVAL_TURNS, promptExecutor)
+				.then(() => {
+					if (ctx.hasUI) {
+						ctx.ui.setStatus(
+							"scribe-last",
+							formatFooterText(ctx, `Scribe ✓ ${formatTimestamp(now())}`),
+						);
+					}
+				})
 				.catch((error) => {
+					if (ctx.hasUI) {
+						ctx.ui.setStatus(
+							"scribe-last",
+							formatFooterText(ctx, `Scribe ✗ ${formatTimestamp(now())}`),
+						);
+					}
 					reportError(ctx, "scribe run", error);
 				})
 				.finally(() => {
@@ -322,7 +345,21 @@ export const createAgentEndHandler = (options?: {
 			editorRunning = true;
 			updateWorkingMessage();
 			void editorFn(editorPath, ctx, promptExecutor)
+				.then(() => {
+					if (ctx.hasUI) {
+						ctx.ui.setStatus(
+							"editor-last",
+							formatFooterText(ctx, `Editor ✓ ${formatTimestamp(now())}`),
+						);
+					}
+				})
 				.catch((error) => {
+					if (ctx.hasUI) {
+						ctx.ui.setStatus(
+							"editor-last",
+							formatFooterText(ctx, `Editor ✗ ${formatTimestamp(now())}`),
+						);
+					}
 					reportError(ctx, "editor run", error);
 				})
 				.finally(() => {

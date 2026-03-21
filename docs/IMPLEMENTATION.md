@@ -86,6 +86,7 @@ Implement a project-local pi extension that captures durable decisions and conve
 - Keep logic compatible with `ctx.hasUI === false`.
 - Use `ctx.ui.setWorkingMessage()` for run feedback and clear on completion.
 - Update footer counters each turn via `scribe-count`/`editor-count` keys using `theme.fg("dim", ...)` to match footer text color (currently 1/3 cadence for manual testing).
+- Update last-run status in footer (`scribe-last`, `editor-last`) with timestamp and success/failure.
 
 ## Quality Gates
 - `npm run lint` passes (Biome).
