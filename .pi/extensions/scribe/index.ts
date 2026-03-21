@@ -1,419 +1,378 @@
-import { complete } from "@mariozechner/pi-ai";
-import { appendFile, mkdir, readFile, writeFile } from "node:fs/promises";
-import { dirname, join } from "node:path";
+import { existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
+import { homedir } from "node:os";
+import { dirname, join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
-
+import { complete, type Message } from "@mariozechner/pi-ai";
+import {
+	DEFAULT_MAX_BYTES,
+	DEFAULT_MAX_LINES,
+	formatSize,
+	truncateHead,
+	withFileMutationQueue,
+} from "@mariozechner/pi-coding-agent";
 import type { ExtensionAPI, ExtensionContext } from "@mariozechner/pi-coding-agent";
 
-import { createPromptPipeline } from "./pipeline";
+/**
+ * Get the turn counts for editor and scribe
+ * from the config file
+ */
 
-import {
-	buildEditorPrompt,
-	buildPendingDecisionsDocument,
-	buildScribePrompt,
-	computeEditorIntervalTurns,
-	defaultConventionsDocument,
-	extractResponseText,
-	extractTurnEntries,
-	getCandidateBlocks,
-	isEditorState,
-	isScribeState,
-	keepCandidateBlocks,
-	markCandidatesReviewed,
-	parseDecisionIntervalTurns,
-	parseEditorConfig,
-	selectNewTurns,
-	simpleHash,
-} from "./core.mjs";
+type AgentMessage = { role?: string; content?: unknown };
 
-const DEFAULT_DECISION_INTERVAL_TURNS = 3;
-const DEFAULT_EDITOR_RATE_MULTIPLIER = 3;
-const CONFIG_PATH = [".pi", "extensions", "scribe.config.json"];
-const DECISIONS_PATH = ["docs", "decisions.md"];
-const OUTPUT_PATH = ["docs", "conventions.md"];
-const EXTENSION_DIR = dirname(fileURLToPath(import.meta.url));
-const SCRIBE_PROMPT_PATH = [join(EXTENSION_DIR, "prompts", "scribe.md")];
-const EDITOR_PROMPT_PATH = [join(EXTENSION_DIR, "prompts", "editor.md")];
-const EDITOR_TEMPLATE_PATH = [join(EXTENSION_DIR, "prompts", "editor-conventions-template.md")];
-const SCRIBE_SYSTEM_PROMPT = "You are a concise assistant. Reply with plain text only.";
-const EDITOR_SYSTEM_PROMPT = "You are a concise assistant. Reply with plain text only.";
-const SCRIBE_STATE_CUSTOM_TYPE = "scribe-state";
-const EDITOR_STATE_CUSTOM_TYPE = "editor-state";
-const DEFAULT_DECISIONS_DOCUMENT = "# Decision Log\n";
-const REQUIRED_CONVENTIONS_HEADINGS = ["# Conventions", "## Active Decisions"];
-
-export type ScribeState = {
-	turnsSinceLastDecision: number;
-	lastProcessedEntryId?: string;
-	runsSkipped?: number;
-	runsExecuted?: number;
-	decisionsAppended?: number;
-	noDecisionRuns?: number;
-	failures?: number;
+type ScribeConfig = {
+	decisionIntervalTurns: number;
+	editorRateMultiplier: number;
 };
 
-export type EditorState = {
-	turnsSinceLastEdit: number;
-	lastProcessedDecisionsHash?: string;
-	runsSkipped?: number;
-	runsExecuted?: number;
-	conventionsUpdates?: number;
-	noChangeRuns?: number;
-	invalidOutputSkips?: number;
-	failures?: number;
-};
+const baseDir = dirname(fileURLToPath(import.meta.url));
 
-export type ScribeDeps = {
-	readText: (path: string) => Promise<string>;
-	appendText: (path: string, text: string) => Promise<void>;
-	ensureDir: (path: string) => Promise<void>;
-	complete: typeof complete;
-};
-
-export type EditorDeps = {
-	readText: (path: string) => Promise<string>;
-	writeText: (path: string, text: string) => Promise<void>;
-	ensureDir: (path: string) => Promise<void>;
-	complete: typeof complete;
-};
-
-const defaultScribeDeps: ScribeDeps = {
-	readText: (path) => readFile(path, "utf8"),
-	appendText: (path, text) => appendFile(path, text, "utf8"),
-	ensureDir: (path) => mkdir(path, { recursive: true }),
-	complete,
-};
-
-const defaultEditorDeps: EditorDeps = {
-	readText: (path) => readFile(path, "utf8"),
-	writeText: (path, text) => writeFile(path, text, "utf8"),
-	ensureDir: (path) => mkdir(path, { recursive: true }),
-	complete,
-};
-
-const asNonNegativeInt = (value: unknown, fallback = 0): number =>
-	typeof value === "number" && Number.isInteger(value) && value >= 0 ? value : fallback;
-
-const countCandidateBlocks = (markdown: string): number => (markdown.match(/^### \[CANDIDATE\]/gm) ?? []).length;
-
-const buildScribeState = (overrides?: Partial<ScribeState>): ScribeState => ({
-	turnsSinceLastDecision: 0,
-	runsSkipped: 0,
-	runsExecuted: 0,
-	decisionsAppended: 0,
-	noDecisionRuns: 0,
-	failures: 0,
-	...overrides,
-});
-
-const buildEditorState = (overrides?: Partial<EditorState>): EditorState => ({
-	turnsSinceLastEdit: 0,
-	runsSkipped: 0,
-	runsExecuted: 0,
-	conventionsUpdates: 0,
-	noChangeRuns: 0,
-	invalidOutputSkips: 0,
-	failures: 0,
-	...overrides,
-});
-
-const normalizeScribeState = (state: ScribeState): ScribeState => ({
-	turnsSinceLastDecision: asNonNegativeInt(state.turnsSinceLastDecision),
-	lastProcessedEntryId: typeof state.lastProcessedEntryId === "string" ? state.lastProcessedEntryId : undefined,
-	runsSkipped: asNonNegativeInt(state.runsSkipped),
-	runsExecuted: asNonNegativeInt(state.runsExecuted),
-	decisionsAppended: asNonNegativeInt(state.decisionsAppended),
-	noDecisionRuns: asNonNegativeInt(state.noDecisionRuns),
-	failures: asNonNegativeInt(state.failures),
-});
-
-const normalizeEditorState = (state: EditorState): EditorState => ({
-	turnsSinceLastEdit: asNonNegativeInt(state.turnsSinceLastEdit),
-	lastProcessedDecisionsHash:
-		typeof state.lastProcessedDecisionsHash === "string" ? state.lastProcessedDecisionsHash : undefined,
-	runsSkipped: asNonNegativeInt(state.runsSkipped),
-	runsExecuted: asNonNegativeInt(state.runsExecuted),
-	conventionsUpdates: asNonNegativeInt(state.conventionsUpdates),
-	noChangeRuns: asNonNegativeInt(state.noChangeRuns),
-	invalidOutputSkips: asNonNegativeInt(state.invalidOutputSkips),
-	failures: asNonNegativeInt(state.failures),
-});
-
-const hasRequiredConventionsSections = (text: string): boolean =>
-	REQUIRED_CONVENTIONS_HEADINGS.every((heading) => text.includes(heading));
-
-async function readPipelineConfigText(cwd: string, readText: ScribeDeps["readText"]): Promise<string> {
-	return readText(join(cwd, ...CONFIG_PATH));
-}
-
-export async function readConfiguredDecisionIntervalTurns(cwd: string, deps: ScribeDeps): Promise<number> {
-	try {
-		const configText = await readPipelineConfigText(cwd, deps.readText);
-		return parseDecisionIntervalTurns(configText, DEFAULT_DECISION_INTERVAL_TURNS);
-	} catch {
-		return DEFAULT_DECISION_INTERVAL_TURNS;
+export const fillPromptTemplate = (template: string, replacements: Record<string, string>) => {
+	let filled = template;
+	for (const [key, value] of Object.entries(replacements)) {
+		filled = filled.replaceAll(`{${key}}`, value);
 	}
-}
+	return filled;
+};
 
-export async function readConfiguredEditorIntervalTurns(cwd: string, deps: EditorDeps): Promise<number> {
-	try {
-		const configText = await readPipelineConfigText(cwd, deps.readText);
-		return computeEditorIntervalTurns(parseEditorConfig(configText));
-	} catch {
-		return DEFAULT_DECISION_INTERVAL_TURNS * DEFAULT_EDITOR_RATE_MULTIPLIER;
-	}
-}
+const getPrompt = (path: string, replacements: Record<string, string>) => {
+	/*
+	 * Take in the path of a prompt markdown template file and
+	 * fill the given content into the prompt markdown file
+	 */
+	const template = readFileSync(path, "utf-8");
+	return fillPromptTemplate(template, replacements);
+};
 
-async function ensureDecisionsDocument(path: string, deps: ScribeDeps): Promise<void> {
-	try {
-		const existing = await deps.readText(path);
-		if (existing.trim()) return;
-	} catch {
-		// bootstrap missing file
+const writeToFile = (path: string, content: string) => {
+	/*
+	 * Write the given content to the file at the given path
+	 */
+	const dir = dirname(path);
+	mkdirSync(dir, { recursive: true });
+	writeFileSync(path, content, "utf-8");
+};
+
+export type PromptExecutor = (prompt: string, ctx: ExtensionContext) => Promise<string>;
+
+const executePrompt: PromptExecutor = async (prompt: string, ctx: ExtensionContext) => {
+	/*
+	 * Execute the given prompt using the active session ctx.model
+	 * and call using complete()
+	 * return the result
+	 */
+	const model = ctx.model;
+	if (!model) {
+		throw new Error(
+			"Scribe extension failed to execute prompt: no active model. Fix: select a model with /model.",
+		);
 	}
 
-	await deps.appendText(path, DEFAULT_DECISIONS_DOCUMENT);
-}
-
-const readCurrentConventions = async (cwd: string, outputPath: string, deps: EditorDeps): Promise<string> => {
-	try {
-		const existing = await deps.readText(outputPath);
-		if (existing.trim()) return existing;
-	} catch {
-		// fallthrough
+	const apiKey = await ctx.modelRegistry.getApiKey(model);
+	if (!apiKey) {
+		throw new Error(
+			`Scribe extension failed to execute prompt: missing API key for ${model.provider}/${model.id}. Fix: configure the provider key in settings or run /login.`,
+		);
 	}
 
-	try {
-		const template = await deps.readText(join(cwd, ...EDITOR_TEMPLATE_PATH));
-		if (template.trim()) return `${template.trim()}\n`;
-	} catch {
-		// fallthrough
-	}
+	const messages: Message[] = [
+		{
+			role: "user",
+			content: [{ type: "text", text: prompt }],
+			timestamp: Date.now(),
+		},
+	];
 
-	return defaultConventionsDocument();
+	const response = await complete(model, { messages }, { apiKey });
+	const text = response.content
+		.filter((block): block is { type: "text"; text: string } => block.type === "text")
+		.map((block) => block.text)
+		.join("\n")
+		.trim();
+	return text;
 };
 
-const readOrBootstrapDecisions = async (decisionsPath: string, deps: EditorDeps): Promise<string> => {
-	try {
-		const existing = await deps.readText(decisionsPath);
-		if (existing.trim()) return existing;
-	} catch {
-		// bootstrap missing file
-	}
+export const selectRecentMessages = (
+	entries: Array<{ type: string; message?: AgentMessage }>,
+	windowTurns: number,
+): AgentMessage[] => {
+	const recentMessages: AgentMessage[] = [];
+	let userTurns = 0;
 
-	await deps.writeText(decisionsPath, DEFAULT_DECISIONS_DOCUMENT);
-	return DEFAULT_DECISIONS_DOCUMENT;
-};
+	for (let index = entries.length - 1; index >= 0; index -= 1) {
+		const entry = entries[index];
+		if (!entry || entry.type !== "message") {
+			continue;
+		}
 
-export function createScribeAgentEndHandler(deps: ScribeDeps) {
-	return createPromptPipeline<ScribeState, { decisionsPath: string }>({
-		name: "Scribe",
-		stateCustomType: SCRIBE_STATE_CUSTOM_TYPE,
-		deps,
-		systemPrompt: SCRIBE_SYSTEM_PROMPT,
-		promptPathSegments: SCRIBE_PROMPT_PATH,
-		getInterval: (ctx, pipelineDeps) => readConfiguredDecisionIntervalTurns(ctx.cwd, pipelineDeps as ScribeDeps),
-		getTurns: (state) => state.turnsSinceLastDecision,
-		setTurns: (state, value) => {
-			state.turnsSinceLastDecision = value;
-		},
-		incrementRunsSkipped: (state) => {
-			state.runsSkipped = asNonNegativeInt(state.runsSkipped) + 1;
-		},
-		incrementRunsExecuted: (state) => {
-			state.runsExecuted = asNonNegativeInt(state.runsExecuted) + 1;
-		},
-		incrementOutputsApplied: (state, count) => {
-			state.decisionsAppended = asNonNegativeInt(state.decisionsAppended) + count;
-		},
-		incrementNoOutputRuns: (state) => {
-			state.noDecisionRuns = asNonNegativeInt(state.noDecisionRuns) + 1;
-		},
-		incrementFailures: (state) => {
-			state.failures = asNonNegativeInt(state.failures) + 1;
-		},
-		updateFooter: (ctx, interval, state) => {
-			if (!ctx.hasUI) return;
-			const text = `Scribe ${state.turnsSinceLastDecision}/${interval} | run:${state.runsExecuted ?? 0} log:${
-				state.decisionsAppended ?? 0
-			} skip:${state.runsSkipped ?? 0}`;
-			ctx.ui.setStatus("scribe", `\x1b[90m${text}\x1b[0m`);
-		},
-		initState: () => buildScribeState(),
-		isState: isScribeState,
-		normalizeState: (state) => normalizeScribeState(state),
-		extractResponseText,
-		prepare: async (ctx, pipelineDeps, state, promptTemplate) => {
-			const decisionsPath = join(ctx.cwd, ...DECISIONS_PATH);
-			await pipelineDeps.ensureDir(dirname(decisionsPath));
-			await ensureDecisionsDocument(decisionsPath, pipelineDeps as ScribeDeps);
+		const message = entry.message as AgentMessage;
+		if (!message || (message.role !== "user" && message.role !== "assistant")) {
+			continue;
+		}
 
-			const branch = ctx.sessionManager.getBranch();
-			const turnEntries = extractTurnEntries(branch);
-			const turnSelection = selectNewTurns(turnEntries, state.lastProcessedEntryId);
-			state.lastProcessedEntryId = turnSelection.newLastProcessedEntryId;
-
-			const recentTurns = turnSelection.newTurns.map((turn) => turn.line).join("\n").trim();
-			if (!recentTurns) {
-				return { prompt: null, context: { decisionsPath } };
+		if (message.role === "user") {
+			userTurns += 1;
+			if (userTurns > windowTurns) {
+				break;
 			}
+		}
 
-			const prompt = buildScribePrompt(promptTemplate, recentTurns);
-			return { prompt, context: { decisionsPath } };
-		},
-		apply: async (_ctx, pipelineDeps, _state, responseText, context) => {
-			const decisionsPath = context?.decisionsPath;
-			if (!decisionsPath) return { noOutput: true };
-			const text = keepCandidateBlocks(responseText);
-			if (!text) return { noOutput: true };
-			await (pipelineDeps.appendText?.(decisionsPath, `\n${text}\n`) ?? Promise.resolve());
-			return { appliedCount: countCandidateBlocks(text) };
-		},
-		notifications: {
-			start: "Scribe: logging decisions...",
-			success: "Scribe: decisions logged",
-			noOutput: "Scribe: no decisions made",
-			failurePrefix: "Scribe failed:",
-		},
+		recentMessages.unshift(message);
+	}
+
+	return recentMessages;
+};
+
+export const shouldTrigger = (turnCount: number, interval: number) =>
+	interval > 0 && turnCount % interval === 0;
+
+export const computeEditorInterval = (decisionInterval: number, multiplier: number) =>
+	decisionInterval * multiplier;
+
+const enforceOutputLimit = (output: string, label: string): string => {
+	const truncation = truncateHead(output, {
+		maxLines: DEFAULT_MAX_LINES,
+		maxBytes: DEFAULT_MAX_BYTES,
 	});
-}
 
-export function createEditorAgentEndHandler(deps: EditorDeps) {
-	return createPromptPipeline<EditorState, {
-		decisions: string;
-		decisionsPath: string;
-		outputPath: string;
-	}>({
-		name: "Editor",
-		stateCustomType: EDITOR_STATE_CUSTOM_TYPE,
-		deps,
-		systemPrompt: EDITOR_SYSTEM_PROMPT,
-		promptPathSegments: EDITOR_PROMPT_PATH,
-		getInterval: (ctx, pipelineDeps) => readConfiguredEditorIntervalTurns(ctx.cwd, pipelineDeps as EditorDeps),
-		getTurns: (state) => state.turnsSinceLastEdit,
-		setTurns: (state, value) => {
-			state.turnsSinceLastEdit = value;
-		},
-		incrementRunsSkipped: (state) => {
-			state.runsSkipped = asNonNegativeInt(state.runsSkipped) + 1;
-		},
-		incrementRunsExecuted: (state) => {
-			state.runsExecuted = asNonNegativeInt(state.runsExecuted) + 1;
-		},
-		incrementOutputsApplied: (state, count) => {
-			state.conventionsUpdates = asNonNegativeInt(state.conventionsUpdates) + count;
-		},
-		incrementNoOutputRuns: (state) => {
-			state.noChangeRuns = asNonNegativeInt(state.noChangeRuns) + 1;
-		},
-		incrementFailures: (state) => {
-			state.failures = asNonNegativeInt(state.failures) + 1;
-		},
-		incrementInvalidOutputSkips: (state) => {
-			state.invalidOutputSkips = asNonNegativeInt(state.invalidOutputSkips) + 1;
-		},
-		updateFooter: (ctx, interval, state) => {
-			if (!ctx.hasUI) return;
-			const text = `Editor ${state.turnsSinceLastEdit}/${interval} | run:${state.runsExecuted ?? 0} upd:${
-				state.conventionsUpdates ?? 0
-			} skip:${state.runsSkipped ?? 0}`;
-			ctx.ui.setStatus("editor", `\x1b[90m${text}\x1b[0m`);
-		},
-		initState: () => buildEditorState(),
-		isState: isEditorState,
-		normalizeState: (state) => normalizeEditorState(state),
-		extractResponseText,
-		prepare: async (ctx, pipelineDeps, state, promptTemplate) => {
-			const decisionsPath = join(ctx.cwd, ...DECISIONS_PATH);
-			const outputPath = join(ctx.cwd, ...OUTPUT_PATH);
-			await pipelineDeps.ensureDir(dirname(outputPath));
+	if (truncation.truncated) {
+		const limit = `${formatSize(truncation.maxBytes)} or ${truncation.maxLines} lines`;
+		const observed = `${formatSize(truncation.totalBytes)}, ${truncation.totalLines} lines`;
+		throw new Error(
+			`Scribe extension failed to process ${label} output: output exceeded ${limit} (${observed}). Fix: tighten the ${label} prompt or reduce content volume.`,
+		);
+	}
 
-			const decisions = await readOrBootstrapDecisions(decisionsPath, pipelineDeps as EditorDeps);
-			if (!decisions.trim()) {
-				return {
-					prompt: null,
-					context: { decisions, decisionsPath, outputPath },
-					noOutputMessage: "Editor: no decision changes",
-				};
+	return truncation.content;
+};
+
+const reportError = (ctx: ExtensionContext, scope: string, error: unknown) => {
+	const message = error instanceof Error ? error.message : String(error);
+	console.error(`Scribe extension ${scope} failed: ${message}`);
+	if (ctx.hasUI) {
+		ctx.ui.notify(`Scribe extension ${scope} failed: ${message}`, "error");
+	}
+};
+
+export const buildDecisionsContent = (existing: string, output: string): string | null => {
+	const trimmedOutput = output.trim();
+	if (!trimmedOutput) {
+		return null;
+	}
+
+	const trimmedExisting = existing.trim();
+	const header = trimmedExisting.length === 0 ? "# Decisions\n\n" : `${trimmedExisting}\n\n`;
+	return `${header}${trimmedOutput}\n`;
+};
+
+export const buildConventionsContent = (output: string): string | null => {
+	const trimmedOutput = output.trim();
+	if (!trimmedOutput) {
+		return null;
+	}
+	return `${trimmedOutput}\n`;
+};
+
+export const execScribe = async (
+	promptPath: string,
+	ctx: ExtensionContext,
+	windowTurns: number,
+	promptExecutor: PromptExecutor = executePrompt,
+) => {
+	/*
+	 * Execute the scribe prompt
+	 * fill the messages into the prompt
+	 * append the results to the DECISIONS.md file
+	 */
+	const branch = ctx.sessionManager.getBranch();
+	const recentMessages = selectRecentMessages(branch, windowTurns);
+	if (recentMessages.length === 0) {
+		return;
+	}
+
+	const recentTurns = recentMessages
+		.map((message) => {
+			const role = message.role === "user" ? "User" : "Assistant";
+			const content = message.content;
+			if (typeof content === "string") {
+				return `${role}: ${content.trim()}`;
 			}
-
-			const decisionsHash = simpleHash(decisions);
-			if (decisionsHash === state.lastProcessedDecisionsHash) {
-				return {
-					prompt: null,
-					context: { decisions, decisionsPath, outputPath },
-					noOutputMessage: "Editor: no decision changes",
-				};
+			if (!Array.isArray(content)) {
+				return `${role}:`;
 			}
+			const textParts = content
+				.filter((block) => block && typeof block === "object" && "type" in block)
+				.filter((block) => (block as { type?: string }).type === "text")
+				.map((block) => (block as { text?: string }).text ?? "")
+				.filter((text) => text.trim().length > 0);
+			return textParts.length > 0 ? `${role}: ${textParts.join("\n")}` : `${role}:`;
+		})
+		.filter((line) => line.trim().length > 0)
+		.join("\n\n");
 
-			const candidateBlocks = getCandidateBlocks(decisions);
-			if (candidateBlocks.length === 0) {
-				state.lastProcessedDecisionsHash = decisionsHash;
-				return {
-					prompt: null,
-					context: { decisions, decisionsPath, outputPath },
-					noOutputMessage: "Editor: no unreviewed decisions",
-				};
-			}
+	const prompt = getPrompt(promptPath, { recentTurns });
+	const output = await promptExecutor(prompt, ctx);
+	if (!output) {
+		return;
+	}
 
-			const currentConventions = await readCurrentConventions(ctx.cwd, outputPath, pipelineDeps as EditorDeps);
-			const pendingDecisions = buildPendingDecisionsDocument(candidateBlocks);
-			const prompt = buildEditorPrompt(promptTemplate, currentConventions, pendingDecisions);
-			return { prompt, context: { decisions, decisionsPath, outputPath } };
-		},
-		apply: async (_ctx, pipelineDeps, state, responseText, context) => {
-			if (!context) return { noOutput: true };
-			const normalizedOutput = `${responseText.trim()}\n`;
-			if (!normalizedOutput.trim()) return { noOutput: true };
-			if (!hasRequiredConventionsSections(normalizedOutput)) {
-				return { invalidOutput: true };
-			}
+	const safeOutput = enforceOutputLimit(output, "scribe");
+	const decisionsPath = resolve(ctx.cwd, "docs", "DECISIONS.md");
 
-			const reviewedDecisions = markCandidatesReviewed(context.decisions);
-			await Promise.all([
-				pipelineDeps.writeText?.(context.outputPath, normalizedOutput),
-				pipelineDeps.writeText?.(context.decisionsPath, reviewedDecisions),
-			]);
-			state.lastProcessedDecisionsHash = simpleHash(reviewedDecisions);
-			return { appliedCount: 1 };
-		},
-		notifications: {
-			start: "Editor: consolidating decisions...",
-			success: "Editor: updated docs/conventions.md",
-			noOutput: "Editor: no decision changes",
-			invalidOutput: "Editor: skipped write (missing required conventions sections)",
-			failurePrefix: "Editor failed:",
-		},
+	await withFileMutationQueue(decisionsPath, async () => {
+		const existing = existsSync(decisionsPath) ? readFileSync(decisionsPath, "utf-8") : "";
+		const nextContent = buildDecisionsContent(existing, safeOutput);
+		if (!nextContent) {
+			return;
+		}
+		writeToFile(decisionsPath, nextContent);
 	});
-}
+};
 
-export default function (pi: ExtensionAPI) {
-	const scribeHandler = createScribeAgentEndHandler(defaultScribeDeps);
-	const editorHandler = createEditorAgentEndHandler(defaultEditorDeps);
+export const execEditor = async (
+	promptPath: string,
+	ctx: ExtensionContext,
+	promptExecutor: PromptExecutor = executePrompt,
+) => {
+	/*
+	 * Execute the editor prompt
+	 * get the decisions from the DECISIONS.md file
+	 * fill the decisions into the editor prompt
+	 * return the new file and write to CONVENTIONS.md
+	 */
+	const decisionsPath = resolve(ctx.cwd, "docs", "DECISIONS.md");
+	if (!existsSync(decisionsPath)) {
+		return;
+	}
 
-	const updateFooters = async (ctx: ExtensionContext) => {
-		const [scribeInterval, editorInterval] = await Promise.all([
-			readConfiguredDecisionIntervalTurns(ctx.cwd, defaultScribeDeps),
-			readConfiguredEditorIntervalTurns(ctx.cwd, defaultEditorDeps),
-		]);
-		scribeHandler.updateFooter(ctx, scribeInterval);
-		editorHandler.updateFooter(ctx, editorInterval);
+	const decisions = readFileSync(decisionsPath, "utf-8").trim();
+	if (!decisions) {
+		return;
+	}
+
+	const conventionsPath = resolve(ctx.cwd, "docs", "CONVENTIONS.md");
+	const currentConventions = existsSync(conventionsPath)
+		? readFileSync(conventionsPath, "utf-8").trim() || "None."
+		: "None.";
+
+	const prompt = getPrompt(promptPath, {
+		currentConventions,
+		newCandidates: decisions,
+	});
+	const output = await promptExecutor(prompt, ctx);
+	const safeOutput = enforceOutputLimit(output, "editor");
+	const nextContent = buildConventionsContent(safeOutput);
+	if (!nextContent) {
+		return;
+	}
+
+	await withFileMutationQueue(conventionsPath, async () => {
+		writeToFile(conventionsPath, nextContent);
+	});
+};
+
+export const createAgentEndHandler = (options?: {
+	promptExecutor?: PromptExecutor;
+	execScribeFn?: typeof execScribe;
+	execEditorFn?: typeof execEditor;
+	configPath?: string;
+	scribePromptPath?: string;
+	editorPromptPath?: string;
+}) => {
+	let turnCount = 0;
+	let config: ScribeConfig | null = null;
+	let scribeRunning = false;
+	let editorRunning = false;
+
+	return async (_event: unknown, ctx: ExtensionContext) => {
+		turnCount += 1;
+
+		if (!config) {
+			const projectConfigPath = resolve(ctx.cwd, ".pi", "extensions", "scribe.config.json");
+			const globalConfigPath = resolve(
+				homedir(),
+				".pi",
+				"agent",
+				"extensions",
+				"scribe.config.json",
+			);
+			const configPath = options?.configPath
+				? options.configPath
+				: existsSync(projectConfigPath)
+					? projectConfigPath
+					: globalConfigPath;
+			if (!existsSync(configPath)) {
+				throw new Error(
+					`Scribe extension failed to load config. Missing config at ${projectConfigPath} and ${globalConfigPath}. Fix: create the file with decisionIntervalTurns and editorRateMultiplier.`,
+				);
+			}
+
+			let rawConfig: unknown;
+			try {
+				rawConfig = JSON.parse(readFileSync(configPath, "utf-8"));
+			} catch (error) {
+				throw new Error(
+					`Scribe extension failed to parse config at ${configPath}: ${error instanceof Error ? error.message : "unknown error"}. Fix: ensure the file is valid JSON with decisionIntervalTurns and editorRateMultiplier.`,
+				);
+			}
+
+			const candidate = rawConfig as Partial<ScribeConfig>;
+			if (
+				!candidate ||
+				typeof candidate.decisionIntervalTurns !== "number" ||
+				candidate.decisionIntervalTurns <= 0 ||
+				typeof candidate.editorRateMultiplier !== "number" ||
+				candidate.editorRateMultiplier <= 0
+			) {
+				throw new Error(
+					`Scribe extension failed to load config at ${configPath}: invalid values. Fix: set decisionIntervalTurns and editorRateMultiplier to positive numbers.`,
+				);
+			}
+
+			config = {
+				decisionIntervalTurns: Math.floor(candidate.decisionIntervalTurns),
+				editorRateMultiplier: Math.floor(candidate.editorRateMultiplier),
+			};
+		}
+
+		const decisionInterval = config.decisionIntervalTurns;
+		const editorInterval = computeEditorInterval(decisionInterval, config.editorRateMultiplier);
+		const scribePath = options?.scribePromptPath ?? join(baseDir, "prompts", "scribe.md");
+		const editorPath = options?.editorPromptPath ?? join(baseDir, "prompts", "editor.md");
+		const promptExecutor = options?.promptExecutor ?? executePrompt;
+		const scribeFn = options?.execScribeFn ?? execScribe;
+		const editorFn = options?.execEditorFn ?? execEditor;
+
+		if (shouldTrigger(turnCount, decisionInterval) && !scribeRunning) {
+			scribeRunning = true;
+			void scribeFn(scribePath, ctx, decisionInterval, promptExecutor)
+				.catch((error) => {
+					reportError(ctx, "scribe run", error);
+				})
+				.finally(() => {
+					scribeRunning = false;
+				});
+		}
+
+		if (shouldTrigger(turnCount, editorInterval) && !editorRunning) {
+			editorRunning = true;
+			void editorFn(editorPath, ctx, promptExecutor)
+				.catch((error) => {
+					reportError(ctx, "editor run", error);
+				})
+				.finally(() => {
+					editorRunning = false;
+				});
+		}
 	};
+};
 
-	pi.on("session_start", async (_event, ctx) => {
-		scribeHandler.hydrateState(ctx);
-		editorHandler.hydrateState(ctx);
-		await updateFooters(ctx);
-	});
+const main = (pi: ExtensionAPI) => {
+	/*
+	 * use the pi.on('agent_end') event to conditionally trigger
+	 * on each agent_end see if the TURN_COUNTS is divisible by the editor and scribe turn counts
+	 * if it is, execute the relevent prompt function async
+	 */
+	pi.on("agent_end", createAgentEndHandler());
+};
 
-	pi.on("session_switch", async (_event, ctx) => {
-		scribeHandler.hydrateState(ctx);
-		editorHandler.hydrateState(ctx);
-		await updateFooters(ctx);
-	});
-
-	pi.on("agent_end", async (_event, ctx) => {
-		await scribeHandler.onAgentEnd(pi, ctx);
-		await editorHandler.onAgentEnd(pi, ctx);
-	});
-}
+export default main;
