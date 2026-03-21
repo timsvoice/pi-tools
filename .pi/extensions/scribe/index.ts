@@ -263,7 +263,6 @@ export const createAgentEndHandler = (options?: {
 	execEditorFn?: typeof execEditor;
 	scribePromptPath?: string;
 	editorPromptPath?: string;
-	sendMessage?: (content: string) => void;
 }) => {
 	let turnCount = 0;
 	let scribeRunning = false;
@@ -291,27 +290,44 @@ export const createAgentEndHandler = (options?: {
 			);
 		}
 
+		const updateWorkingMessage = () => {
+			if (!ctx.hasUI) {
+				return;
+			}
+			if (editorRunning) {
+				ctx.ui.setWorkingMessage("Editorializing...");
+				return;
+			}
+			if (scribeRunning) {
+				ctx.ui.setWorkingMessage("Scribing...");
+				return;
+			}
+			ctx.ui.setWorkingMessage();
+		};
+
 		if (turnCount % SCRIBE_INTERVAL_TURNS === 0 && !scribeRunning) {
 			scribeRunning = true;
-			options?.sendMessage?.("Scribing...");
+			updateWorkingMessage();
 			void scribeFn(scribePath, ctx, SCRIBE_INTERVAL_TURNS, promptExecutor)
 				.catch((error) => {
 					reportError(ctx, "scribe run", error);
 				})
 				.finally(() => {
 					scribeRunning = false;
+					updateWorkingMessage();
 				});
 		}
 
 		if (turnCount % EDITOR_INTERVAL_TURNS === 0 && !editorRunning) {
 			editorRunning = true;
-			options?.sendMessage?.("Editorializing...");
+			updateWorkingMessage();
 			void editorFn(editorPath, ctx, promptExecutor)
 				.catch((error) => {
 					reportError(ctx, "editor run", error);
 				})
 				.finally(() => {
 					editorRunning = false;
+					updateWorkingMessage();
 				});
 		}
 	};
@@ -325,18 +341,7 @@ const main = (pi: ExtensionAPI) => {
 		ctx.ui.setStatus("scribe-count", formatFooterText(ctx, `Scribe 0/${SCRIBE_INTERVAL_TURNS}`));
 		ctx.ui.setStatus("editor-count", formatFooterText(ctx, `Editor 0/${EDITOR_INTERVAL_TURNS}`));
 	});
-	pi.on(
-		"agent_end",
-		createAgentEndHandler({
-			sendMessage: (content) => {
-				pi.sendMessage({
-					customType: "scribe-status",
-					content,
-					display: true,
-				});
-			},
-		}),
-	);
+	pi.on("agent_end", createAgentEndHandler());
 };
 
 export default main;

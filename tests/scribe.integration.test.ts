@@ -18,6 +18,7 @@ type StubContext = {
 	ui: {
 		theme?: { fg: (token: string, text: string) => string };
 		setStatus: (key: string, value?: string) => void;
+		setWorkingMessage: (message?: string) => void;
 		notify: (message: string, level: "info" | "warning" | "error") => void;
 	};
 	model?: { provider: string; id: string } | null;
@@ -36,8 +37,10 @@ const createContext = (options: {
 	model?: { provider: string; id: string } | null;
 	apiKey?: string | null;
 	statusCalls?: Array<[string, string | undefined]>;
+	workingCalls?: Array<string | undefined>;
 }) => {
 	const calls = options.statusCalls ?? [];
+	const workingCalls = options.workingCalls ?? [];
 	return {
 		cwd: options.cwd,
 		hasUI: options.hasUI ?? true,
@@ -47,6 +50,9 @@ const createContext = (options: {
 			},
 			setStatus: (key: string, value?: string) => {
 				calls.push([key, value]);
+			},
+			setWorkingMessage: (message?: string) => {
+				workingCalls.push(message);
 			},
 			notify: () => undefined,
 		},
@@ -126,7 +132,6 @@ test("execEditor is a no-op when decisions are missing", async () => {
 test("createAgentEndHandler triggers cadence", async () => {
 	const cwd = await createTempDir();
 	const ctx = createContext({ cwd, hasUI: false });
-	const messages: string[] = [];
 	let scribeCalls = 0;
 	let editorCalls = 0;
 
@@ -140,9 +145,6 @@ test("createAgentEndHandler triggers cadence", async () => {
 		promptExecutor: async () => "",
 		scribePromptPath: join(cwd, "scribe.md"),
 		editorPromptPath: join(cwd, "editor.md"),
-		sendMessage: (content) => {
-			messages.push(content);
-		},
 	});
 
 	for (let i = 0; i < 30; i += 1) {
@@ -152,14 +154,13 @@ test("createAgentEndHandler triggers cadence", async () => {
 
 	assert.equal(scribeCalls, 30);
 	assert.equal(editorCalls, 10);
-	assert.ok(messages.includes("Scribing..."));
-	assert.ok(messages.includes("Editorializing..."));
 });
 
 test("createAgentEndHandler sets counters", async () => {
 	const cwd = await createTempDir();
 	const statusCalls: Array<[string, string | undefined]> = [];
-	const ctx = createContext({ cwd, statusCalls });
+	const workingCalls: Array<string | undefined> = [];
+	const ctx = createContext({ cwd, statusCalls, workingCalls });
 
 	const handler = createAgentEndHandler({
 		execScribeFn: async () => undefined,
@@ -174,6 +175,9 @@ test("createAgentEndHandler sets counters", async () => {
 		await Promise.resolve();
 	}
 
+	assert.ok(workingCalls.includes("Scribing..."));
+	assert.ok(workingCalls.includes("Editorializing..."));
+	assert.ok(workingCalls.includes(undefined));
 	assert.ok(statusCalls.some((call) => call[0] === "scribe-count" && call[1] === "Scribe 1/1"));
 	assert.ok(statusCalls.some((call) => call[0] === "editor-count" && call[1] === "Editor 1/3"));
 	assert.ok(statusCalls.some((call) => call[0] === "scribe-count" && call[1] === "Scribe 1/1"));

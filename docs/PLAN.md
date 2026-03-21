@@ -29,7 +29,7 @@ pi-scribe is a project-local pi extension that captures durable engineering deci
 4. **Outputs**:
    - `docs/DECISIONS.md` is append-only, includes a header when empty.
    - `docs/CONVENTIONS.md` is fully rewritten each editor run.
-5. **UI feedback**: While running, emit a visible message: `Scribing...` or `Editorializing...`.
+5. **UI feedback**: While running, display `Scribing...` or `Editorializing...` via the working message indicator (clears on completion).
 6. **UI counters**: Always show turn counters in the footer: `Scribe X/1` and `Editor Y/3` (when `ctx.hasUI`).
 7. **Error messaging**: Fail fast with actionable errors (what failed, why, fix path).
 
@@ -62,8 +62,8 @@ pi-scribe is a project-local pi extension that captures durable engineering deci
    - **Scribe run**: collect recent turns, fill `scribe.md`, call the active model, append to `docs/DECISIONS.md` (every turn for manual testing).
    - **Editor run**: read `docs/DECISIONS.md`, fill `editor.md`, call the active model, rewrite `docs/CONVENTIONS.md` (every 3 turns for manual testing).
 4. Writes are serialized per-file using `withFileMutationQueue()`.
-5. While tasks are running, the UI shows `Scribing...` or `Editorializing...`.
-6. The footer shows counters: `Scribe X/10`, `Editor Y/30`.
+5. While tasks are running, the UI shows `Scribing...` or `Editorializing...` via the working message indicator.
+6. The footer shows counters: `Scribe X/1`, `Editor Y/3`.
 
 ## Implementation Notes
 - **Event handler**: `pi.on("agent_end", handler)`; run scribe/editor asynchronously.
@@ -71,7 +71,7 @@ pi-scribe is a project-local pi extension that captures durable engineering deci
 - **Prompt templating**: replace `{recentTurns}`, `{currentConventions}`, `{newCandidates}`; never emit placeholders.
 - **Windowing**: count user turns only; ignore non-user/assistant roles.
 - **Output guarding**: enforce size limits; if exceeded, throw with a fix path.
-- **UI feedback**: emit output messages (e.g., via `pi.sendMessage`) for `Scribing...` and `Editorializing...` when runs begin.
+- **UI feedback**: use `ctx.ui.setWorkingMessage("Scribing...")` / `ctx.ui.setWorkingMessage("Editorializing...")`; clear by calling `ctx.ui.setWorkingMessage()`.
 - **UI counters**: update `ctx.ui.setStatus("scribe-count", theme.fg("dim", "Scribe X/1"))` and `ctx.ui.setStatus("editor-count", theme.fg("dim", "Editor Y/3"))` on every turn; guard with `ctx.hasUI`.
 - **Reload behavior**: changes to extensions require `/reload` for hot-reload testing (see `reload-runtime.ts`).
 - **Error handling**: catch background errors, log, and optionally notify via `ctx.ui.notify`.
@@ -79,7 +79,7 @@ pi-scribe is a project-local pi extension that captures durable engineering deci
 ## Acceptance Criteria
 - Decision candidates are appended at the 1-turn cadence without blocking user interaction (temporary for manual testing).
 - Conventions are rewritten at the 3-turn cadence using the editor prompt (temporary for manual testing).
-- Output messages appear when scribe/editor runs begin.
+- Working message updates appear during runs and clear afterward.
 - Footer counters update each turn with `Scribe X/1` and `Editor Y/3`.
 - Output size limits are enforced; over-limit outputs emit actionable errors.
 - Concurrent edits by built-in tools do not race with scribe writes.

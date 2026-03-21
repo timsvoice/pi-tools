@@ -10,7 +10,7 @@ Project-local pi extension that captures durable decisions and conventions from 
 - Runs on `agent_end`.
 - Scribe cadence: every 1 turn (temporary for manual testing).
 - Editor cadence: every 3 turns (temporary for manual testing).
-- Output messages show `Scribing...` / `Editorializing...` when runs begin.
+- Working message shows `Scribing...` / `Editorializing...` during runs and clears on completion.
 - Footer counters show `Scribe X/1` and `Editor Y/3` each turn.
 
 ## Outputs
