@@ -1,0 +1,17 @@
+{
+	"name": "pi-scribe",
+	"private": true,
+	"type": "module",
+	"scripts": {
+		"lint": "biome check .",
+		"lint:fix": "biome check --write .",
+		"lint:complexity": "eslint . --ext .ts",
+		"diff-budget": "node ./scripts/check-diff-budget.mjs"
+	},
+	"devDependencies": {
+		"@biomejs/biome": "^1.8.3",
+		"@typescript-eslint/parser": "^7.18.0",
+		"eslint": "^8.57.0",
+		"typescript": "^5.5.4"
+	}
+}
