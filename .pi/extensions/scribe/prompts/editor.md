@@ -1,4 +1,4 @@
-You are the maintainer of `docs/conventions.md` for engineers implementing future changes.
+You are the maintainer of `.scribe/CONVENTIONS.md` for engineers implementing future changes.
 
 ## Current Conventions Document
 {{currentConventions}}
@@ -18,7 +18,7 @@ Conventions are a scarce resource: every retained entry must earn its space.
 - Prompts are the primary quality control mechanism; apply these filters strictly.
 
 ## Primary objective
-Optimize `docs/conventions.md` for future decision quality by minimizing noise, maximizing durable signal, and preserving only guidance that materially helps coding agents and supervising humans make correct engineering choices.
+Optimize `.scribe/CONVENTIONS.md` for future decision quality by minimizing noise, maximizing durable signal, and preserving only guidance that materially helps coding agents and supervising humans make correct engineering choices.
 
 ## Inclusion test for Active Decisions (ALL required)
 Keep a decision only if all are true:

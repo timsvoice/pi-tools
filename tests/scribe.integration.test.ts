@@ -203,15 +203,16 @@ test("execEditor fails fast when queue is invalid", async () => {
 test("executePrompt includes a system prompt", async () => {
 	const cwd = await createTempDir();
 	let seenSystemPrompt: string | undefined;
-	const ctx = createContext({
-		cwd,
-		completeFn: async (_model, input) => {
-			seenSystemPrompt = input.systemPrompt;
-			return { content: [{ type: "text", text: "Model output" }] };
-		},
-	});
+	const completeFn = async (_model: { provider: string; id: string }, input: {
+		systemPrompt?: string;
+		messages: Array<{ role: string; content: Array<{ type: string; text: string }>; timestamp: number }>;
+	}) => {
+		seenSystemPrompt = input.systemPrompt;
+		return { content: [{ type: "text", text: "Model output" }] };
+	};
+	const ctx = createContext({ cwd });
 
-	await executePrompt("Prompt text", ctx);
+	await executePrompt("Prompt text", ctx, { completeFn });
 
 	assert.ok(seenSystemPrompt?.trim().length);
 });
