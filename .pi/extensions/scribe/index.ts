@@ -51,43 +51,6 @@ const writeToFile = (path: string, content: string) => {
 	writeFileSync(path, content, "utf-8");
 };
 
-const isDebugEnabled = () => {
-	const raw = process.env.SCRIBE_DEBUG;
-	if (!raw) {
-		return false;
-	}
-	return ["1", "true", "yes", "on"].includes(raw.toLowerCase());
-};
-
-const writePromptLog = (
-	ctx: ExtensionContext,
-	kind: "scribe" | "editor" | "model",
-	prompt: string,
-	output: string,
-) => {
-	if (!isDebugEnabled()) {
-		return;
-	}
-
-	const logsDir = resolve(ctx.cwd, ".scribe", "logs");
-	mkdirSync(logsDir, { recursive: true });
-	const timestamp = new Date().toISOString();
-	const safeTimestamp = timestamp.replace(/[:.]/g, "-");
-	const suffix = Math.random().toString(36).slice(2, 8);
-	const logPath = join(logsDir, `${safeTimestamp}_${kind}_${suffix}.json`);
-	const payload = JSON.stringify(
-		{
-			timestamp,
-			kind,
-			prompt,
-			output,
-		},
-		null,
-		2,
-	);
-	writeFileSync(logPath, payload, "utf-8");
-};
-
 export const executePrompt: PromptExecutor = async (prompt: string, ctx: ExtensionContext) => {
 	const model = ctx.model;
 	if (!model) {
@@ -125,7 +88,7 @@ export const executePrompt: PromptExecutor = async (prompt: string, ctx: Extensi
 		.map((block) => block.text)
 		.join("\n")
 		.trim();
-	writePromptLog(ctx, "model", prompt, output);
+
 	return output;
 };
 
@@ -134,6 +97,7 @@ export const selectRecentMessages = (
 	windowTurns: number,
 ): AgentMessage[] => {
 	const recentMessages: AgentMessage[] = [];
+	const pendingAssistants: AgentMessage[] = [];
 	let userTurns = 0;
 
 	for (let index = entries.length - 1; index >= 0; index -= 1) {
@@ -147,18 +111,21 @@ export const selectRecentMessages = (
 			continue;
 		}
 
-		if (message.role === "user") {
-			if (userTurns + 1 > windowTurns) {
-				break;
-			}
-			userTurns += 1;
-			recentMessages.unshift(message);
+		if (message.role === "assistant") {
+			pendingAssistants.push(message);
 			continue;
 		}
 
-		if (userTurns < windowTurns) {
-			recentMessages.unshift(message);
+		if (userTurns + 1 > windowTurns) {
+			break;
 		}
+
+		for (const assistant of pendingAssistants) {
+			recentMessages.unshift(assistant);
+		}
+		pendingAssistants.length = 0;
+		userTurns += 1;
+		recentMessages.unshift(message);
 	}
 
 	return recentMessages;
@@ -192,6 +159,35 @@ const reportError = (ctx: ExtensionContext, scope: string, error: unknown) => {
 	}
 };
 
+const withTimeout = async <T>(
+	promise: Promise<T>,
+	timeoutMs: number,
+	label: string,
+): Promise<T> => {
+	if (!timeoutMs || timeoutMs <= 0) {
+		return promise;
+	}
+
+	let timeoutId: NodeJS.Timeout | undefined;
+	const timeoutPromise = new Promise<T>((_, reject) => {
+		timeoutId = setTimeout(() => {
+			reject(
+				new Error(
+					`Scribe extension ${label} timed out after ${timeoutMs}ms. Fix: increase timeout or reduce model latency.`,
+				),
+			);
+		}, timeoutMs);
+	});
+
+	try {
+		return await Promise.race([promise, timeoutPromise]);
+	} finally {
+		if (timeoutId) {
+			clearTimeout(timeoutId);
+		}
+	}
+};
+
 const formatFooterText = (ctx: ExtensionContext, text: string) =>
 	ctx.ui.theme ? ctx.ui.theme.fg("dim", text) : text;
 
@@ -212,8 +208,7 @@ type DecisionOutput = {
 	invalidation: string;
 };
 
-const DECISION_KEYS: Array<keyof DecisionOutput> = [
-	"status",
+const DECISION_FIELDS: Array<Exclude<keyof DecisionOutput, "status">> = [
 	"title",
 	"type",
 	"decision",
@@ -247,22 +242,36 @@ const parseDecisionOutput = (output: string): DecisionOutput => {
 	}
 
 	const payload = parsed as Record<string, unknown>;
-	for (const key of DECISION_KEYS) {
-		if (!(key in payload) || typeof payload[key] !== "string") {
-			throw new Error(
-				`Scribe extension failed to parse decision output: missing or invalid ${key}. Fix: ensure the scribe prompt returns all fields as strings.`,
-			);
-		}
-	}
-
 	const status = payload.status;
+	if (typeof status !== "string") {
+		throw new Error(
+			"Scribe extension failed to parse decision output: missing status. Fix: ensure status is a string.",
+		);
+	}
 	if (status !== "decision" && status !== "no_decision") {
 		throw new Error(
 			'Scribe extension failed to parse decision output: invalid status. Fix: ensure status is "decision" or "no_decision".',
 		);
 	}
 
-	return payload as DecisionOutput;
+	const decision: DecisionOutput = {
+		status,
+		title: "",
+		type: "",
+		decision: "",
+		why: "",
+		impact: "",
+		invalidation: "",
+	};
+
+	for (const field of DECISION_FIELDS) {
+		const value = payload[field];
+		if (typeof value === "string") {
+			decision[field] = value;
+		}
+	}
+
+	return decision;
 };
 
 const formatDecisionTemplate = (decision: DecisionOutput): string =>
@@ -348,7 +357,6 @@ export const execScribe = async (
 	const recentTurns = formatRecentTurns(recentMessages);
 	const prompt = getPrompt(promptPath, { recentTurns });
 	const output = await promptExecutor(prompt, ctx);
-	writePromptLog(ctx, "scribe", prompt, output);
 	if (!output) {
 		return;
 	}
@@ -393,7 +401,6 @@ export const execEditor = async (
 		newCandidates: decisions,
 	});
 	const output = await promptExecutor(prompt, ctx);
-	writePromptLog(ctx, "editor", prompt, output);
 	const safeOutput = enforceOutputLimit(output, "editor");
 	const nextContent = buildConventionsContent(safeOutput);
 	if (!nextContent) {
@@ -413,6 +420,7 @@ export const createAgentEndHandler = (options?: {
 	scribePromptPath?: string;
 	editorPromptPath?: string;
 	now?: () => number;
+	runTimeoutMs?: number;
 }) => {
 	let turnCount = 0;
 	let scribeRunning = false;
@@ -427,6 +435,7 @@ export const createAgentEndHandler = (options?: {
 		const scribeFn = options?.execScribeFn ?? execScribe;
 		const editorFn = options?.execEditorFn ?? execEditor;
 		const now = options?.now ?? Date.now;
+		const runTimeoutMs = options?.runTimeoutMs ?? 60_000;
 
 		if (ctx.hasUI) {
 			const scribeStep = turnCount % SCRIBE_INTERVAL_TURNS || SCRIBE_INTERVAL_TURNS;
@@ -459,7 +468,11 @@ export const createAgentEndHandler = (options?: {
 		if (turnCount % SCRIBE_INTERVAL_TURNS === 0 && !scribeRunning) {
 			scribeRunning = true;
 			updateWorkingMessage();
-			void scribeFn(scribePath, ctx, SCRIBE_INTERVAL_TURNS, promptExecutor)
+			const run = withTimeout(
+				scribeFn(scribePath, ctx, SCRIBE_INTERVAL_TURNS, promptExecutor),
+				runTimeoutMs,
+				"scribe run",
+			)
 				.then(() => {
 					if (ctx.hasUI) {
 						ctx.ui.setStatus(
@@ -481,12 +494,15 @@ export const createAgentEndHandler = (options?: {
 					scribeRunning = false;
 					updateWorkingMessage();
 				});
+			void run.catch((error) => {
+				console.error("Scribe extension scribe run handler failed:", error);
+			});
 		}
 
 		if (turnCount % EDITOR_INTERVAL_TURNS === 0 && !editorRunning) {
 			editorRunning = true;
 			updateWorkingMessage();
-			void editorFn(editorPath, ctx, promptExecutor)
+			const run = withTimeout(editorFn(editorPath, ctx, promptExecutor), runTimeoutMs, "editor run")
 				.then(() => {
 					if (ctx.hasUI) {
 						ctx.ui.setStatus(
@@ -508,6 +524,9 @@ export const createAgentEndHandler = (options?: {
 					editorRunning = false;
 					updateWorkingMessage();
 				});
+			void run.catch((error) => {
+				console.error("Scribe extension editor run handler failed:", error);
+			});
 		}
 	};
 };

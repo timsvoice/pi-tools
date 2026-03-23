@@ -21,9 +21,6 @@ Project-local pi extension that captures durable decisions and conventions from 
 - `.scribe/DECISIONS.md` (append-only, header on first write). JSON model output is transformed into a markdown decision template containing all fields.
 - `.scribe/CONVENTIONS.md` (fully rewritten per editor run)
 
-## Debug logging
-Set `SCRIBE_DEBUG=1` (or `true/yes/on`) to capture prompt inputs and outputs. Every model call writes a JSON log to `.scribe/logs/` under the repo root with `kind: "model"`. Scribe/editor runs also emit their own logs (`kind: "scribe"` / `"editor"`). Files are created per call and include timestamp, kind, prompt, and output.
-
 ## Testing
 Before every commit, run all tests, including promptfoo.
 ```bash

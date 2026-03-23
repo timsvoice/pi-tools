@@ -1,9 +1,9 @@
 import assert from "node:assert/strict";
-import { mkdir, mkdtemp, readFile, readdir, writeFile } from "node:fs/promises";
+import { mkdir, mkdtemp, readFile, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
 import { test } from "node:test";
-import { setImmediate } from "node:timers/promises";
+import { setImmediate, setTimeout } from "node:timers/promises";
 import {
 	createAgentEndHandler,
 	execEditor,
@@ -168,36 +168,6 @@ test("execScribe fails fast when queue is invalid", async () => {
 	);
 });
 
-test("execScribe logs prompt and output when debug enabled", async () => {
-	const cwd = await createTempDir();
-	const promptPath = join(cwd, "scribe.md");
-	await writeFile(promptPath, "Prompt: {{recentTurns}}");
-	const branch: MessageEntry[] = [{ type: "message", message: { role: "user", content: "u1" } }];
-	const ctx = createContext({ cwd, branch });
-	const previous = process.env.SCRIBE_DEBUG;
-	process.env.SCRIBE_DEBUG = "1";
-
-	const output = buildDecisionOutput();
-	try {
-		await execScribe(promptPath, ctx, 1, async () => output);
-	} finally {
-		if (previous === undefined) {
-			process.env.SCRIBE_DEBUG = undefined;
-		} else {
-			process.env.SCRIBE_DEBUG = previous;
-		}
-	}
-
-	const logsDir = resolve(cwd, ".scribe", "logs");
-	const entries = await readdir(logsDir);
-	assert.equal(entries.length, 1);
-	assert.ok(entries[0].includes("scribe"));
-	const log = JSON.parse(await readFile(resolve(logsDir, entries[0]), "utf-8"));
-	assert.equal(log.kind, "scribe");
-	assert.equal(log.prompt, "Prompt: User: u1");
-	assert.equal(log.output, output);
-});
-
 test("execEditor rewrites conventions when decisions exist", async () => {
 	const cwd = await createTempDir();
 	await mkdir(resolve(cwd, ".scribe"), { recursive: true });
@@ -228,67 +198,6 @@ test("execEditor fails fast when queue is invalid", async () => {
 			}),
 		/queue unavailable/i,
 	);
-});
-
-test("execEditor logs prompt and output when debug enabled", async () => {
-	const cwd = await createTempDir();
-	await mkdir(resolve(cwd, ".scribe"), { recursive: true });
-	await writeFile(resolve(cwd, ".scribe", "DECISIONS.md"), "# Decisions\n\nDecision");
-	const promptPath = join(cwd, "editor.md");
-	await writeFile(promptPath, "Current: {{currentConventions}}\nDecisions: {{newCandidates}}");
-	const ctx = createContext({ cwd });
-	const previous = process.env.SCRIBE_DEBUG;
-	process.env.SCRIBE_DEBUG = "true";
-
-	try {
-		await execEditor(promptPath, ctx, async () => "Convention");
-	} finally {
-		if (previous === undefined) {
-			process.env.SCRIBE_DEBUG = undefined;
-		} else {
-			process.env.SCRIBE_DEBUG = previous;
-		}
-	}
-
-	const logsDir = resolve(cwd, ".scribe", "logs");
-	const entries = await readdir(logsDir);
-	assert.equal(entries.length, 1);
-	assert.ok(entries[0].includes("editor"));
-	const log = JSON.parse(await readFile(resolve(logsDir, entries[0]), "utf-8"));
-	assert.equal(log.kind, "editor");
-	assert.equal(log.prompt, "Current: None.\nDecisions: # Decisions\n\nDecision");
-	assert.equal(log.output, "Convention");
-});
-
-test("executePrompt logs model output when debug enabled", async () => {
-	const cwd = await createTempDir();
-	const ctx = createContext({
-		cwd,
-		completeFn: async () => ({
-			content: [{ type: "text", text: "Model output" }],
-		}),
-	});
-	const previous = process.env.SCRIBE_DEBUG;
-	process.env.SCRIBE_DEBUG = "true";
-
-	try {
-		const output = await executePrompt("Prompt text", ctx);
-		assert.equal(output, "Model output");
-	} finally {
-		if (previous === undefined) {
-			process.env.SCRIBE_DEBUG = undefined;
-		} else {
-			process.env.SCRIBE_DEBUG = previous;
-		}
-	}
-
-	const logsDir = resolve(cwd, ".scribe", "logs");
-	const entries = await readdir(logsDir);
-	assert.equal(entries.length, 1);
-	const log = JSON.parse(await readFile(resolve(logsDir, entries[0]), "utf-8"));
-	assert.equal(log.kind, "model");
-	assert.equal(log.prompt, "Prompt text");
-	assert.equal(log.output, "Model output");
 });
 
 test("executePrompt includes a system prompt", async () => {
@@ -347,6 +256,34 @@ test("createAgentEndHandler triggers cadence", async () => {
 
 	assert.equal(scribeCalls, 30);
 	assert.equal(editorCalls, 10);
+});
+
+test("createAgentEndHandler times out hanging runs", async () => {
+	const cwd = await createTempDir();
+	const statusCalls: Array<[string, string | undefined]> = [];
+	const ctx = createContext({ cwd, statusCalls });
+	let scribeCalls = 0;
+
+	const handler = createAgentEndHandler({
+		execScribeFn: async () => {
+			scribeCalls += 1;
+			return new Promise<void>(() => undefined);
+		},
+		execEditorFn: async () => undefined,
+		promptExecutor: async () => "",
+		scribePromptPath: join(cwd, "scribe.md"),
+		editorPromptPath: join(cwd, "editor.md"),
+		now: () => new Date(2026, 0, 1, 12, 34).getTime(),
+		runTimeoutMs: 5,
+	});
+
+	await handler({}, ctx);
+	await setTimeout(20);
+
+	assert.equal(scribeCalls, 1);
+	assert.ok(
+		statusCalls.some((call) => call[0] === "scribe-last" && call[1] === "| Scribe ✗ 12:34"),
+	);
 });
 
 test("createAgentEndHandler sets counters", async () => {

@@ -43,6 +43,7 @@ If the text only describes what happened in this task, output no_decision.
 
 ## Output constraints
 - Return valid JSON only.
+- Do not wrap the JSON in code fences or Markdown.
 - If status = "decision", all non-status fields must be non-empty (use "not stated" if missing).
 - If no decision qualifies, return {"status":"no_decision"} with empty fields.
 - No commentary or extra text.
@@ -76,6 +77,7 @@ Output:
 
 ### Rules
 - Return a single JSON object and nothing else.
+- Do not wrap the JSON in code fences or Markdown.
 - If status = "decision", all fields except status must be non-empty. If the conversation lacks a rationale/impact/invalidation, set the missing fields to "not stated".
 - If status = "no_decision", all other fields must be empty strings
 - Always return all fields

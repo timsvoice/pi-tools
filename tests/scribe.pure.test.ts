@@ -45,6 +45,22 @@ test("selectRecentMessages includes last N user turns with assistants", () => {
 	);
 });
 
+test("selectRecentMessages skips orphan assistant messages", () => {
+	const entries = [
+		{ type: "message", message: { role: "assistant", content: "a0" } },
+		{ type: "message", message: { role: "user", content: "u1" } },
+		{ type: "message", message: { role: "assistant", content: "a1" } },
+		{ type: "message", message: { role: "user", content: "u2" } },
+		{ type: "message", message: { role: "assistant", content: "a2" } },
+	];
+
+	const result = selectRecentMessages(entries, 2);
+	assert.deepEqual(
+		result.map((message) => message.content),
+		["u1", "a1", "u2", "a2"],
+	);
+});
+
 test("selectRecentMessages preserves order for generated sequences", () => {
 	const roleArb = fc.constantFrom("user", "assistant", "tool", "system");
 	const entryArb = fc.record({
@@ -126,6 +142,29 @@ test("buildDecisionsContent appends to existing content", () => {
 			"- Why: Consistency",
 			"- Impact: Standardized outputs",
 			"- Invalidation: not stated",
+			"",
+		].join("\n"),
+	);
+});
+
+test("buildDecisionsContent allows missing fields", () => {
+	const output = JSON.stringify({
+		status: "decision",
+	});
+	assert.equal(
+		buildDecisionsContent("", output),
+		[
+			"# Decisions",
+			"",
+			"## ",
+			"",
+			"- Status: decision",
+			"- Title: ",
+			"- Type: ",
+			"- Decision: ",
+			"- Why: ",
+			"- Impact: ",
+			"- Invalidation: ",
 			"",
 		].join("\n"),
 	);
