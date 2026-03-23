@@ -8,6 +8,7 @@
 		"lint:complexity": "eslint . --ext .ts",
 		"diff-budget": "node ./scripts/check-diff-budget.mjs",
 		"test": "node --test --import tsx $(find tests -name \"*.test.ts\")",
+		"promptfoo": "promptfoo eval -c promptfooconfig.yaml",
 		"audit": "npm run audit:deps && npm run audit:secrets && npm run audit:sast && npm run audit:sbom",
 		"audit:deps": "npm audit --omit=dev",
 		"audit:deps:all": "npm audit",
@@ -23,6 +24,7 @@
 		"@typescript-eslint/parser": "^7.18.0",
 		"eslint": "^8.57.0",
 		"fast-check": "^3.22.0",
+		"promptfoo": "^0.121.2",
 		"tsx": "^4.19.2",
 		"typescript": "^5.5.4"
 	}

@@ -11,8 +11,8 @@ import {
 } from "@mariozechner/pi-coding-agent";
 import type { ExtensionAPI, ExtensionContext } from "@mariozechner/pi-coding-agent";
 
-const SCRIBE_INTERVAL_TURNS = 10;
-const EDITOR_INTERVAL_TURNS = 30;
+const SCRIBE_INTERVAL_TURNS = 1;
+const EDITOR_INTERVAL_TURNS = 3;
 const baseDir = dirname(fileURLToPath(import.meta.url));
 
 type AgentMessage = { role?: string; content?: unknown };
@@ -21,18 +21,18 @@ export type PromptExecutor = (prompt: string, ctx: ExtensionContext) => Promise<
 
 export const fillPromptTemplate = (template: string, replacements: Record<string, string>) => {
 	for (const key of Object.keys(replacements)) {
-		if (!template.includes(`{${key}}`)) {
+		if (!template.includes(`{{${key}}}`)) {
 			throw new Error(`Prompt template missing required placeholder: ${key}.`);
 		}
 	}
 
 	let filled = template;
 	for (const [key, value] of Object.entries(replacements)) {
-		filled = filled.replaceAll(`{${key}}`, value);
+		filled = filled.replaceAll(`{{${key}}}`, value);
 	}
 
 	for (const key of Object.keys(replacements)) {
-		if (filled.includes(`{${key}}`)) {
+		if (filled.includes(`{{${key}}}`)) {
 			throw new Error(`Prompt template has unresolved placeholder: ${key}.`);
 		}
 	}
@@ -49,6 +49,43 @@ const writeToFile = (path: string, content: string) => {
 	const dir = dirname(path);
 	mkdirSync(dir, { recursive: true });
 	writeFileSync(path, content, "utf-8");
+};
+
+const isDebugEnabled = () => {
+	const raw = process.env.SCRIBE_DEBUG;
+	if (!raw) {
+		return false;
+	}
+	return ["1", "true", "yes", "on"].includes(raw.toLowerCase());
+};
+
+const writePromptLog = (
+	ctx: ExtensionContext,
+	kind: "scribe" | "editor" | "model",
+	prompt: string,
+	output: string,
+) => {
+	if (!isDebugEnabled()) {
+		return;
+	}
+
+	const logsDir = resolve(ctx.cwd, ".scribe", "logs");
+	mkdirSync(logsDir, { recursive: true });
+	const timestamp = new Date().toISOString();
+	const safeTimestamp = timestamp.replace(/[:.]/g, "-");
+	const suffix = Math.random().toString(36).slice(2, 8);
+	const logPath = join(logsDir, `${safeTimestamp}_${kind}_${suffix}.json`);
+	const payload = JSON.stringify(
+		{
+			timestamp,
+			kind,
+			prompt,
+			output,
+		},
+		null,
+		2,
+	);
+	writeFileSync(logPath, payload, "utf-8");
 };
 
 export const executePrompt: PromptExecutor = async (prompt: string, ctx: ExtensionContext) => {
@@ -74,12 +111,22 @@ export const executePrompt: PromptExecutor = async (prompt: string, ctx: Extensi
 		},
 	];
 
-	const response = await complete(model, { messages }, { apiKey });
-	return response.content
+	const completeFn =
+		(ctx as ExtensionContext & { completeFn?: typeof complete }).completeFn ?? complete;
+
+	const response = await completeFn(
+		model,
+		{ systemPrompt: "Follow the user's instructions.", messages },
+		{ apiKey },
+	);
+
+	const output = response.content
 		.filter((block): block is { type: "text"; text: string } => block.type === "text")
 		.map((block) => block.text)
 		.join("\n")
 		.trim();
+	writePromptLog(ctx, "model", prompt, output);
+	return output;
 };
 
 export const selectRecentMessages = (
@@ -155,15 +202,92 @@ const formatTimestamp = (timestamp: number) => {
 	return `${hours}:${minutes}`;
 };
 
+type DecisionOutput = {
+	status: "decision" | "no_decision";
+	title: string;
+	type: string;
+	decision: string;
+	why: string;
+	impact: string;
+	invalidation: string;
+};
+
+const DECISION_KEYS: Array<keyof DecisionOutput> = [
+	"status",
+	"title",
+	"type",
+	"decision",
+	"why",
+	"impact",
+	"invalidation",
+];
+
+const parseDecisionOutput = (output: string): DecisionOutput => {
+	const trimmed = output.trim();
+	if (!trimmed) {
+		throw new Error(
+			"Scribe extension failed to parse decision output: empty output. Fix: ensure the model returns JSON for decision capture.",
+		);
+	}
+
+	let parsed: unknown;
+	try {
+		parsed = JSON.parse(trimmed);
+	} catch (error) {
+		const message = error instanceof Error ? error.message : String(error);
+		throw new Error(
+			`Scribe extension failed to parse decision output: invalid JSON (${message}). Fix: ensure the scribe prompt returns a single JSON object.`,
+		);
+	}
+
+	if (!parsed || typeof parsed !== "object" || Array.isArray(parsed)) {
+		throw new Error(
+			"Scribe extension failed to parse decision output: JSON must be an object. Fix: ensure the scribe prompt returns a single JSON object.",
+		);
+	}
+
+	const payload = parsed as Record<string, unknown>;
+	for (const key of DECISION_KEYS) {
+		if (!(key in payload) || typeof payload[key] !== "string") {
+			throw new Error(
+				`Scribe extension failed to parse decision output: missing or invalid ${key}. Fix: ensure the scribe prompt returns all fields as strings.`,
+			);
+		}
+	}
+
+	const status = payload.status;
+	if (status !== "decision" && status !== "no_decision") {
+		throw new Error(
+			'Scribe extension failed to parse decision output: invalid status. Fix: ensure status is "decision" or "no_decision".',
+		);
+	}
+
+	return payload as DecisionOutput;
+};
+
+const formatDecisionTemplate = (decision: DecisionOutput): string =>
+	[
+		`## ${decision.title}`,
+		"",
+		`- Status: ${decision.status}`,
+		`- Title: ${decision.title}`,
+		`- Type: ${decision.type}`,
+		`- Decision: ${decision.decision}`,
+		`- Why: ${decision.why}`,
+		`- Impact: ${decision.impact}`,
+		`- Invalidation: ${decision.invalidation}`,
+		"",
+	].join("\n");
+
 export const buildDecisionsContent = (existing: string, output: string): string | null => {
-	const trimmedOutput = output.trim();
-	if (!trimmedOutput) {
+	const parsed = parseDecisionOutput(output);
+	if (parsed.status === "no_decision") {
 		return null;
 	}
 
 	const trimmedExisting = existing.trim();
 	const header = trimmedExisting.length === 0 ? "# Decisions\n\n" : `${trimmedExisting}\n\n`;
-	return `${header}${trimmedOutput}\n`;
+	return `${header}${formatDecisionTemplate(parsed)}`;
 };
 
 export const buildConventionsContent = (output: string): string | null => {
@@ -195,6 +319,19 @@ const formatRecentTurns = (recentMessages: AgentMessage[]) =>
 		.filter((line) => line.trim().length > 0)
 		.join("\n\n");
 
+const resolveMutationQueue = (
+	options: { queue?: (path: string, fn: () => Promise<void>) => Promise<void> } | undefined,
+	label: string,
+) => {
+	const queue = options?.queue ?? withFileMutationQueue;
+	if (typeof queue !== "function") {
+		throw new Error(
+			`Scribe extension failed to write ${label}: file mutation queue unavailable. Fix: upgrade @mariozechner/pi-coding-agent to >= 0.61.0 or remove the custom queue override.`,
+		);
+	}
+	return queue;
+};
+
 export const execScribe = async (
 	promptPath: string,
 	ctx: ExtensionContext,
@@ -211,13 +348,14 @@ export const execScribe = async (
 	const recentTurns = formatRecentTurns(recentMessages);
 	const prompt = getPrompt(promptPath, { recentTurns });
 	const output = await promptExecutor(prompt, ctx);
+	writePromptLog(ctx, "scribe", prompt, output);
 	if (!output) {
 		return;
 	}
 
 	const safeOutput = enforceOutputLimit(output, "scribe");
 	const decisionsPath = resolve(ctx.cwd, "docs", "DECISIONS.md");
-	const queue = options?.queue ?? withFileMutationQueue;
+	const queue = resolveMutationQueue(options, "decisions");
 
 	await queue(decisionsPath, async () => {
 		const existing = existsSync(decisionsPath) ? readFileSync(decisionsPath, "utf-8") : "";
@@ -255,13 +393,14 @@ export const execEditor = async (
 		newCandidates: decisions,
 	});
 	const output = await promptExecutor(prompt, ctx);
+	writePromptLog(ctx, "editor", prompt, output);
 	const safeOutput = enforceOutputLimit(output, "editor");
 	const nextContent = buildConventionsContent(safeOutput);
 	if (!nextContent) {
 		return;
 	}
 
-	const queue = options?.queue ?? withFileMutationQueue;
+	const queue = resolveMutationQueue(options, "conventions");
 	await queue(conventionsPath, async () => {
 		writeToFile(conventionsPath, nextContent);
 	});

@@ -10,9 +10,10 @@ Update tests when behavior/contracts change, not for internal refactors alone.
 
 ## Workflow (per task)
 
-1. Run tests.
-2. Run formatters/linters/type checks.
-3. Make focused, atomic commits.
+1. Run all tests (including promptfoo) before every commit.
+2. Run the full test suite after changes when validating work; promptfoo is only required before commits.
+3. Run formatters/linters/type checks.
+4. Make focused, atomic commits.
 
 When possible, separate refactors from behavior changes.
 
@@ -49,3 +50,9 @@ When possible, separate refactors from behavior changes.
 - Do not use obsequious phrasing or unnecessary agreement.
 - Challenge assumptions directly when evidence is weak or risks are high.
 - Prefer precise, actionable statements over motivational commentary.
+
+## Model Selection
+- never independently update a prescribed model used for inference or testing
+- use only the service provider and model specified by the user
+- when unsure, ask the user their preference
+- this avoids unforeseen costs

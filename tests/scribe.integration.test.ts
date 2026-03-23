@@ -1,5 +1,5 @@
 import assert from "node:assert/strict";
-import { mkdir, mkdtemp, readFile, writeFile } from "node:fs/promises";
+import { mkdir, mkdtemp, readFile, readdir, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
 import { test } from "node:test";
@@ -24,6 +24,18 @@ type StubContext = {
 	};
 	model?: { provider: string; id: string } | null;
 	modelRegistry: { getApiKey: (model: { provider: string; id: string }) => Promise<string | null> };
+	completeFn?: (
+		model: { provider: string; id: string },
+		input: {
+			systemPrompt?: string;
+			messages: Array<{
+				role: string;
+				content: Array<{ type: string; text: string }>;
+				timestamp: number;
+			}>;
+		},
+		options: { apiKey: string },
+	) => Promise<{ content: Array<{ type: string; text: string }> }>;
 	sessionManager: {
 		getBranch: () => Array<{ type: string; message?: { role?: string; content?: unknown } }>;
 	};
@@ -31,12 +43,29 @@ type StubContext = {
 
 const createTempDir = async () => mkdtemp(join(tmpdir(), "scribe-test-"));
 
+const buildDecisionOutput = (
+	overrides: Partial<
+		Record<"status" | "title" | "type" | "decision" | "why" | "impact" | "invalidation", string>
+	> = {},
+) =>
+	JSON.stringify({
+		status: "decision",
+		title: "Decision A",
+		type: "CONSTRAINT",
+		decision: "Do the thing.",
+		why: "not stated",
+		impact: "Teams do the thing.",
+		invalidation: "not stated",
+		...overrides,
+	});
+
 const createContext = (options: {
 	cwd: string;
 	branch?: MessageEntry[];
 	hasUI?: boolean;
 	model?: { provider: string; id: string } | null;
 	apiKey?: string | null;
+	completeFn?: StubContext["completeFn"];
 	statusCalls?: Array<[string, string | undefined]>;
 	workingCalls?: Array<string | undefined>;
 }) => {
@@ -61,6 +90,7 @@ const createContext = (options: {
 		modelRegistry: {
 			getApiKey: async () => (options.apiKey === undefined ? "key" : options.apiKey),
 		},
+		completeFn: options.completeFn,
 		sessionManager: {
 			getBranch: () => options.branch ?? [],
 		},
@@ -70,7 +100,7 @@ const createContext = (options: {
 test("execScribe appends decisions and uses mutation queue", async () => {
 	const cwd = await createTempDir();
 	const promptPath = join(cwd, "scribe.md");
-	await writeFile(promptPath, "{recentTurns} {Short title}");
+	await writeFile(promptPath, "{{recentTurns}} {Short title}");
 	const branch: MessageEntry[] = [
 		{ type: "message", message: { role: "user", content: "u1" } },
 		{ type: "message", message: { role: "assistant", content: "a1" } },
@@ -84,11 +114,28 @@ test("execScribe appends decisions and uses mutation queue", async () => {
 		await fn();
 	};
 
-	await execScribe(promptPath, ctx, 1, async () => "Decision A", { queue });
+	const output = buildDecisionOutput();
+	await execScribe(promptPath, ctx, 1, async () => output, { queue });
 
 	const decisionsPath = resolve(cwd, "docs", "DECISIONS.md");
 	const content = await readFile(decisionsPath, "utf-8");
-	assert.equal(content, "# Decisions\n\nDecision A\n");
+	assert.equal(
+		content,
+		[
+			"# Decisions",
+			"",
+			"## Decision A",
+			"",
+			"- Status: decision",
+			"- Title: Decision A",
+			"- Type: CONSTRAINT",
+			"- Decision: Do the thing.",
+			"- Why: not stated",
+			"- Impact: Teams do the thing.",
+			"- Invalidation: not stated",
+			"",
+		].join("\n"),
+	);
 	assert.equal(queueCalled, true);
 	assert.equal(queuedPath, decisionsPath);
 });
@@ -96,7 +143,7 @@ test("execScribe appends decisions and uses mutation queue", async () => {
 test("execScribe enforces output limits", async () => {
 	const cwd = await createTempDir();
 	const promptPath = join(cwd, "scribe.md");
-	await writeFile(promptPath, "{recentTurns} {Short title}");
+	await writeFile(promptPath, "{{recentTurns}} {Short title}");
 	const branch: MessageEntry[] = [{ type: "message", message: { role: "user", content: "u1" } }];
 	const ctx = createContext({ cwd, branch });
 	const huge = "a".repeat(60 * 1024);
@@ -104,12 +151,59 @@ test("execScribe enforces output limits", async () => {
 	await assert.rejects(() => execScribe(promptPath, ctx, 1, async () => huge), /output exceeded/i);
 });
 
+test("execScribe fails fast when queue is invalid", async () => {
+	const cwd = await createTempDir();
+	const promptPath = join(cwd, "scribe.md");
+	await writeFile(promptPath, "{{recentTurns}} {Short title}");
+	const branch: MessageEntry[] = [{ type: "message", message: { role: "user", content: "u1" } }];
+	const ctx = createContext({ cwd, branch });
+
+	const output = buildDecisionOutput();
+	await assert.rejects(
+		() =>
+			execScribe(promptPath, ctx, 1, async () => output, {
+				queue: {} as unknown as (path: string, fn: () => Promise<void>) => Promise<void>,
+			}),
+		/queue unavailable/i,
+	);
+});
+
+test("execScribe logs prompt and output when debug enabled", async () => {
+	const cwd = await createTempDir();
+	const promptPath = join(cwd, "scribe.md");
+	await writeFile(promptPath, "Prompt: {{recentTurns}}");
+	const branch: MessageEntry[] = [{ type: "message", message: { role: "user", content: "u1" } }];
+	const ctx = createContext({ cwd, branch });
+	const previous = process.env.SCRIBE_DEBUG;
+	process.env.SCRIBE_DEBUG = "1";
+
+	const output = buildDecisionOutput();
+	try {
+		await execScribe(promptPath, ctx, 1, async () => output);
+	} finally {
+		if (previous === undefined) {
+			process.env.SCRIBE_DEBUG = undefined;
+		} else {
+			process.env.SCRIBE_DEBUG = previous;
+		}
+	}
+
+	const logsDir = resolve(cwd, ".scribe", "logs");
+	const entries = await readdir(logsDir);
+	assert.equal(entries.length, 1);
+	assert.ok(entries[0].includes("scribe"));
+	const log = JSON.parse(await readFile(resolve(logsDir, entries[0]), "utf-8"));
+	assert.equal(log.kind, "scribe");
+	assert.equal(log.prompt, "Prompt: User: u1");
+	assert.equal(log.output, output);
+});
+
 test("execEditor rewrites conventions when decisions exist", async () => {
 	const cwd = await createTempDir();
 	await mkdir(resolve(cwd, "docs"), { recursive: true });
 	await writeFile(resolve(cwd, "docs", "DECISIONS.md"), "# Decisions\n\nDecision");
 	const promptPath = join(cwd, "editor.md");
-	await writeFile(promptPath, "{currentConventions}\n{newCandidates}\n{Short title}");
+	await writeFile(promptPath, "{{currentConventions}}\n{{newCandidates}}\n{Short title}");
 	const ctx = createContext({ cwd });
 
 	await execEditor(promptPath, ctx, async () => "Convention");
@@ -119,10 +213,104 @@ test("execEditor rewrites conventions when decisions exist", async () => {
 	assert.equal(content, "Convention\n");
 });
 
+test("execEditor fails fast when queue is invalid", async () => {
+	const cwd = await createTempDir();
+	await mkdir(resolve(cwd, "docs"), { recursive: true });
+	await writeFile(resolve(cwd, "docs", "DECISIONS.md"), "# Decisions\n\nDecision");
+	const promptPath = join(cwd, "editor.md");
+	await writeFile(promptPath, "{{currentConventions}}\n{{newCandidates}}\n{Short title}");
+	const ctx = createContext({ cwd });
+
+	await assert.rejects(
+		() =>
+			execEditor(promptPath, ctx, async () => "Convention", {
+				queue: {} as unknown as (path: string, fn: () => Promise<void>) => Promise<void>,
+			}),
+		/queue unavailable/i,
+	);
+});
+
+test("execEditor logs prompt and output when debug enabled", async () => {
+	const cwd = await createTempDir();
+	await mkdir(resolve(cwd, "docs"), { recursive: true });
+	await writeFile(resolve(cwd, "docs", "DECISIONS.md"), "# Decisions\n\nDecision");
+	const promptPath = join(cwd, "editor.md");
+	await writeFile(promptPath, "Current: {{currentConventions}}\nDecisions: {{newCandidates}}");
+	const ctx = createContext({ cwd });
+	const previous = process.env.SCRIBE_DEBUG;
+	process.env.SCRIBE_DEBUG = "true";
+
+	try {
+		await execEditor(promptPath, ctx, async () => "Convention");
+	} finally {
+		if (previous === undefined) {
+			process.env.SCRIBE_DEBUG = undefined;
+		} else {
+			process.env.SCRIBE_DEBUG = previous;
+		}
+	}
+
+	const logsDir = resolve(cwd, ".scribe", "logs");
+	const entries = await readdir(logsDir);
+	assert.equal(entries.length, 1);
+	assert.ok(entries[0].includes("editor"));
+	const log = JSON.parse(await readFile(resolve(logsDir, entries[0]), "utf-8"));
+	assert.equal(log.kind, "editor");
+	assert.equal(log.prompt, "Current: None.\nDecisions: # Decisions\n\nDecision");
+	assert.equal(log.output, "Convention");
+});
+
+test("executePrompt logs model output when debug enabled", async () => {
+	const cwd = await createTempDir();
+	const ctx = createContext({
+		cwd,
+		completeFn: async () => ({
+			content: [{ type: "text", text: "Model output" }],
+		}),
+	});
+	const previous = process.env.SCRIBE_DEBUG;
+	process.env.SCRIBE_DEBUG = "true";
+
+	try {
+		const output = await executePrompt("Prompt text", ctx);
+		assert.equal(output, "Model output");
+	} finally {
+		if (previous === undefined) {
+			process.env.SCRIBE_DEBUG = undefined;
+		} else {
+			process.env.SCRIBE_DEBUG = previous;
+		}
+	}
+
+	const logsDir = resolve(cwd, ".scribe", "logs");
+	const entries = await readdir(logsDir);
+	assert.equal(entries.length, 1);
+	const log = JSON.parse(await readFile(resolve(logsDir, entries[0]), "utf-8"));
+	assert.equal(log.kind, "model");
+	assert.equal(log.prompt, "Prompt text");
+	assert.equal(log.output, "Model output");
+});
+
+test("executePrompt includes a system prompt", async () => {
+	const cwd = await createTempDir();
+	let seenSystemPrompt: string | undefined;
+	const ctx = createContext({
+		cwd,
+		completeFn: async (_model, input) => {
+			seenSystemPrompt = input.systemPrompt;
+			return { content: [{ type: "text", text: "Model output" }] };
+		},
+	});
+
+	await executePrompt("Prompt text", ctx);
+
+	assert.ok(seenSystemPrompt?.trim().length);
+});
+
 test("execEditor is a no-op when decisions are missing", async () => {
 	const cwd = await createTempDir();
 	const promptPath = join(cwd, "editor.md");
-	await writeFile(promptPath, "{currentConventions}\n{newCandidates}\n{Short title}");
+	await writeFile(promptPath, "{{currentConventions}}\n{{newCandidates}}\n{Short title}");
 	const ctx = createContext({ cwd });
 
 	await execEditor(promptPath, ctx, async () => "Convention");
@@ -154,8 +342,8 @@ test("createAgentEndHandler triggers cadence", async () => {
 		await setImmediate();
 	}
 
-	assert.equal(scribeCalls, 3);
-	assert.equal(editorCalls, 1);
+	assert.equal(scribeCalls, 30);
+	assert.equal(editorCalls, 10);
 });
 
 test("createAgentEndHandler sets counters", async () => {
@@ -182,12 +370,13 @@ test("createAgentEndHandler sets counters", async () => {
 	assert.ok(workingCalls.includes("Scribing..."));
 	assert.ok(workingCalls.includes("Editorializing..."));
 	assert.ok(workingCalls.includes(undefined));
-	assert.ok(statusCalls.some((call) => call[0] === "scribe-last" && call[1] === "Scribe ✓ 12:34"));
+	assert.ok(
+		statusCalls.some((call) => call[0] === "scribe-last" && call[1] === "| Scribe ✓ 12:34"),
+	);
 	assert.ok(statusCalls.some((call) => call[0] === "editor-last" && call[1] === "Editor ✓ 12:34"));
-	assert.ok(statusCalls.some((call) => call[0] === "scribe-count" && call[1] === "Scribe 1/10"));
-	assert.ok(statusCalls.some((call) => call[0] === "editor-count" && call[1] === "Editor 1/30"));
-	assert.ok(statusCalls.some((call) => call[0] === "scribe-count" && call[1] === "Scribe 10/10"));
-	assert.ok(statusCalls.some((call) => call[0] === "editor-count" && call[1] === "Editor 30/30"));
+	assert.ok(statusCalls.some((call) => call[0] === "scribe-count" && call[1] === "Scribe 1/1"));
+	assert.ok(statusCalls.some((call) => call[0] === "editor-count" && call[1] === "Editor 1/3"));
+	assert.ok(statusCalls.some((call) => call[0] === "editor-count" && call[1] === "Editor 3/3"));
 });
 
 test("session_start seeds counter status", async () => {
@@ -211,8 +400,8 @@ test("session_start seeds counter status", async () => {
 	}
 	await sessionStart({}, ctx);
 
-	assert.ok(statusCalls.some((call) => call[0] === "scribe-count" && call[1] === "Scribe 0/10"));
-	assert.ok(statusCalls.some((call) => call[0] === "editor-count" && call[1] === "Editor 0/30"));
+	assert.ok(statusCalls.some((call) => call[0] === "scribe-count" && call[1] === "Scribe 0/1"));
+	assert.ok(statusCalls.some((call) => call[0] === "editor-count" && call[1] === "Editor 0/3"));
 });
 
 test("executePrompt fails fast when model or api key missing", async () => {

@@ -9,3 +9,5 @@ pi-mono/
 
 # Security artifacts
 sbom/
+
+.env

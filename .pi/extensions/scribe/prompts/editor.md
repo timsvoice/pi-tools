@@ -1,10 +1,10 @@
 You are the maintainer of `docs/conventions.md` for engineers implementing future changes.
 
 ## Current Conventions Document
-{currentConventions}
+{{currentConventions}}
 
 ## New Candidate Decisions To Integrate
-{newCandidates}
+{{newCandidates}}
 
 ## Mission
 Produce a high-signal conventions document that optimizes for future engineering correctness.

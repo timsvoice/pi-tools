@@ -7,7 +7,7 @@ Implement a project-local pi extension that captures durable decisions and conve
 - Prompts live at `.pi/extensions/scribe/prompts/` (`scribe.md`, `editor.md`).
 - Extension entry point: `.pi/extensions/scribe/index.ts`.
 - Output files: `docs/DECISIONS.md`, `docs/CONVENTIONS.md`.
-- Cadence: scribe every 10 turns, editor every 30 turns.
+- Cadence: scribe every 1 turn, editor every 3 turns.
 
 ## Delivery Phases
 1. **Test Suite (must be first)**
@@ -38,7 +38,7 @@ Implement a project-local pi extension that captures durable decisions and conve
   - Selects most recent N user turns, preserves order, includes assistant replies adjacent to those turns.
   - Ignores non-user/assistant roles.
 - **Decision/convention builders**
-  - `DECISIONS.md` header inserted when empty; append-only behavior verified.
+  - `DECISIONS.md` header inserted when empty; append-only behavior verified with markdown decision templates derived from JSON output.
   - `CONVENTIONS.md` rewritten only when non-empty output.
 
 ### Test Harness Contracts
@@ -61,7 +61,7 @@ Implement a project-local pi extension that captures durable decisions and conve
   - Reads `docs/DECISIONS.md` and rewrites `docs/CONVENTIONS.md` with stubbed output.
   - No-op when decisions file missing or empty.
 - **Cadence behavior**
-  - Runs scribe on turn 10, editor on turn 30; does not run on other turns.
+  - Runs scribe on turn 1, editor on turn 3; does not run on other turns.
 - **UI status feedback**
   - Sets `ctx.ui.setStatus("scribe", "Scribing...")` and clears on completion.
   - Sets `ctx.ui.setStatus("editor", "Editorializing...")` and clears on completion.
@@ -85,7 +85,7 @@ Implement a project-local pi extension that captures durable decisions and conve
 - Resolve paths with `resolve(ctx.cwd, ...)` and serialize writes with `withFileMutationQueue()`.
 - Keep logic compatible with `ctx.hasUI === false`.
 - Use `ctx.ui.setWorkingMessage()` for run feedback and clear on completion.
-- Update footer counters each turn via `scribe-count`/`editor-count` keys using `theme.fg("dim", ...)` to match footer text color.
+- Update footer counters each turn via `scribe-count`/`editor-count` keys using `theme.fg("dim", ...)` to match footer text color (`Scribe X/1`, `Editor Y/3`).
 - Update last-run status in footer (`scribe-last`, `editor-last`) with timestamp and success/failure.
 
 ## Quality Gates

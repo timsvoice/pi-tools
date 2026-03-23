@@ -1,0 +1,245 @@
+- description: captures explicit project policy
+  vars:
+    recentTurns: |-
+      User: Can we loosen the log size limits for testing?
+      Assistant: We can revisit later.
+      User: I just need a quick experiment.
+      Assistant: Let's avoid changing defaults without a reason.
+      User: Project policy: All changes must run npm test before commit. Why: avoids shipping untested changes. Impact: no commits without green tests. Invalidate if CI enforces pre-merge tests.
+      Assistant: Noted.
+      User: Also, keep responses short.
+      Assistant: Acknowledged.
+  assert:
+    - type: javascript
+      value: |
+        let parsed;
+        try {
+          parsed = JSON.parse(output);
+        } catch {
+          return false;
+        }
+        return parsed.status === "decision"
+          && typeof parsed.title === "string"
+          && parsed.title.trim().length > 0
+          && typeof parsed.type === "string"
+          && parsed.type.length > 0
+          && typeof parsed.decision === "string"
+          && parsed.decision.includes("npm test")
+          && parsed.decision.toLowerCase().includes("commit")
+          && typeof parsed.why === "string"
+          && parsed.why.trim().length > 0
+          && typeof parsed.impact === "string"
+          && parsed.impact.trim().length > 0
+          && typeof parsed.invalidation === "string"
+          && parsed.invalidation.trim().length > 0;
+
+- description: ignores local refactor
+  vars:
+    recentTurns: |-
+      User: The file feels cluttered.
+      Assistant: We can do a cleanup pass.
+      User: I renamed the helper and moved it into utils for clarity.
+      Assistant: Done.
+      User: Should we capture that as a convention?
+      Assistant: No, it's a local refactor.
+  assert:
+    - type: javascript
+      value: |
+        let parsed;
+        try {
+          parsed = JSON.parse(output);
+        } catch {
+          return false;
+        }
+        return parsed.status === "no_decision"
+          && parsed.title === ""
+          && parsed.type === ""
+          && parsed.decision === ""
+          && parsed.why === ""
+          && parsed.impact === ""
+          && parsed.invalidation === "";
+
+- description: captures durable API boundary decision
+  vars:
+    recentTurns: |-
+      User: Can we add extra logging while debugging reloads?
+      Assistant: Temporary logs are fine.
+      User: The last run corrupted DECISIONS.md when two writes collided.
+      Assistant: That sounds like a race.
+      User: Decision: The API boundary owns input validation; internal services should never validate raw request payloads. Why: shared validation rules drifted and caused inconsistent behavior. Impact: all new endpoints must validate at the API boundary before calling service logic. Invalidate if we introduce a dedicated validation service used by all layers.
+      Assistant: Noted.
+      User: Let's rename the handler.
+      Assistant: Renames are fine.
+  assert:
+    - type: javascript
+      value: |
+        let parsed;
+        try {
+          parsed = JSON.parse(output);
+        } catch {
+          return false;
+        }
+        const decisionText = parsed.decision.toLowerCase();
+        return parsed.status === "decision"
+          && typeof parsed.decision === "string"
+          && decisionText.includes("api boundary")
+          && (decisionText.includes("validation") || decisionText.includes("validate"))
+          && parsed.why.trim().length > 0
+          && parsed.impact.trim().length > 0
+          && parsed.invalidation.trim().length > 0
+          && parsed.decision.length < 220;
+
+- description: collapses repeated rationale into one rule
+  vars:
+    recentTurns: |-
+      User: We should avoid mixing persistence writes into business logic.
+      Assistant: Agreed.
+      User: It's caused validation to drift in the past.
+      Assistant: Yes.
+      User: Decision: All persistence writes must go through the data layer. Why: direct writes caused inconsistent validation. Impact: new features must route writes through data layer APIs. Invalidate if the data layer is replaced.
+      Assistant: Noted.
+  assert:
+    - type: javascript
+      value: |
+        let parsed;
+        try {
+          parsed = JSON.parse(output);
+        } catch {
+          return false;
+        }
+        return parsed.status === "decision"
+          && typeof parsed.decision === "string"
+          && parsed.decision.toLowerCase().includes("data layer")
+          && parsed.decision.length < 220
+          && parsed.why.trim().length > 0
+          && parsed.impact.trim().length > 0
+          && parsed.invalidation.trim().length > 0;
+
+- description: ignores UX copy tweak
+  vars:
+    recentTurns: |-
+      User: The footer status is noisy.
+      Assistant: We can tweak the display copy.
+      User: Let's change the status text from Scribing... to Writing... for clarity.
+      Assistant: Okay.
+      User: Also, align timestamps to UTC.
+      Assistant: That's a UI preference.
+  assert:
+    - type: javascript
+      value: |
+        let parsed;
+        try {
+          parsed = JSON.parse(output);
+        } catch {
+          return false;
+        }
+        return parsed.status === "no_decision"
+          && parsed.title === ""
+          && parsed.type === ""
+          && parsed.decision === ""
+          && parsed.why === ""
+          && parsed.impact === ""
+          && parsed.invalidation === "";
+
+- description: ignores session-only choice
+  vars:
+    recentTurns: |-
+      User: We discussed polling vs webhooks and used webhooks in this task.
+      Assistant: Sounds good.
+  assert:
+    - type: javascript
+      value: |
+        let parsed;
+        try {
+          parsed = JSON.parse(output);
+        } catch {
+          return false;
+        }
+        return parsed.status === "no_decision"
+          && parsed.title === ""
+          && parsed.type === ""
+          && parsed.decision === ""
+          && parsed.why === ""
+          && parsed.impact === ""
+          && parsed.invalidation === "";
+
+- description: ignores temporary debug logging
+  vars:
+    recentTurns: |-
+      User: Added a console.log to debug the handler for now.
+      Assistant: Will remove later.
+  assert:
+    - type: javascript
+      value: |
+        let parsed;
+        try {
+          parsed = JSON.parse(output);
+        } catch {
+          return false;
+        }
+        return parsed.status === "no_decision"
+          && parsed.title === ""
+          && parsed.type === ""
+          && parsed.decision === ""
+          && parsed.why === ""
+          && parsed.impact === ""
+          && parsed.invalidation === "";
+
+- description: ignores migration mechanics
+  vars:
+    recentTurns: |-
+      User: Keep the legacy fallback while we migrate configs.
+      Assistant: Okay for now.
+  assert:
+    - type: javascript
+      value: |
+        let parsed;
+        try {
+          parsed = JSON.parse(output);
+        } catch {
+          return false;
+        }
+        return parsed.status === "no_decision"
+          && parsed.title === ""
+          && parsed.type === ""
+          && parsed.decision === ""
+          && parsed.why === ""
+          && parsed.impact === ""
+          && parsed.invalidation === "";
+
+- description: ignores placeholder chatter
+  vars:
+    recentTurns: |-
+      User: The template should keep {Short title} for now.
+      Assistant: That's just an example placeholder.
+  assert:
+    - type: javascript
+      value: |
+        let parsed;
+        try {
+          parsed = JSON.parse(output);
+        } catch {
+          return false;
+        }
+        return parsed.status === "no_decision"
+          && parsed.title === ""
+          && parsed.type === ""
+          && parsed.decision === ""
+          && parsed.why === ""
+          && parsed.impact === ""
+          && parsed.invalidation === "";
+
+- description: enforces json-only output
+  vars:
+    recentTurns: |-
+      User: Project policy: All changes must run npm test before commit. Why: avoid shipping untested changes. Impact: no commits without green tests. Invalidate if CI enforces pre-merge tests.
+  assert:
+    - type: javascript
+      value: |
+        const trimmed = output.trim();
+        try {
+          JSON.parse(trimmed);
+        } catch {
+          return false;
+        }
+        return !trimmed.includes("```") && !trimmed.startsWith("Note:") && !trimmed.startsWith("Summary:");
