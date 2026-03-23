@@ -1,12 +1,12 @@
 # Plan and Requirements: pi-scribe
 
 ## Purpose
-pi-scribe is a project-local pi extension that captures durable engineering decisions and conventions from conversation history. It runs on `agent_end` events, synthesizes recent turns into candidate decisions, and curates a high-signal `docs/CONVENTIONS.md` document. The goal is to preserve long-lived project rules while minimizing noise.
+pi-scribe is a project-local pi extension that captures durable engineering decisions and conventions from conversation history. It runs on `agent_end` events, synthesizes recent turns into candidate decisions, and curates a high-signal `.scribe/CONVENTIONS.md` document. The goal is to preserve long-lived project rules while minimizing noise.
 
 ## Scope
 ### In scope
-- Capture and append decision candidates to `docs/DECISIONS.md`.
-- Curate `docs/CONVENTIONS.md` via the editor prompt.
+- Capture and append decision candidates to `.scribe/DECISIONS.md`.
+- Curate `.scribe/CONVENTIONS.md` via the editor prompt.
 - Provide lightweight UI feedback while background tasks run.
 - Enforce safety constraints for model calls and file writes.
 - Keep operational guidance aligned with pi extension examples (`status-line.ts`, `reload-runtime.ts`, `trigger-compact.ts`).
@@ -27,8 +27,8 @@ pi-scribe is a project-local pi extension that captures durable engineering deci
 2. **Prompting**: Use prompt templates from `.pi/extensions/scribe/prompts/`.
 3. **Input windowing**: Base scribe input on the most recent N user turns, preserving order.
 4. **Outputs**:
-   - `docs/DECISIONS.md` is append-only, includes a header when empty, and stores a markdown decision template derived from the scribe JSON output.
-   - `docs/CONVENTIONS.md` is fully rewritten each editor run.
+   - `.scribe/DECISIONS.md` is append-only, includes a header when empty, and stores a markdown decision template derived from the scribe JSON output.
+   - `.scribe/CONVENTIONS.md` is fully rewritten each editor run.
 5. **UI feedback**: While running, display `Scribing...` or `Editorializing...` via the working message indicator (clears on completion).
 6. **UI counters**: Always show turn counters in the footer: `Scribe X/1` and `Editor Y/3` (when `ctx.hasUI`).
 7. **Run status**: Show last run outcome + timestamp in the footer (e.g., `Scribe ✓ 12:34`, `Editor ✗ 12:34`).
@@ -45,23 +45,23 @@ pi-scribe is a project-local pi extension that captures durable engineering deci
 ## Quality Gates
 - **Linting**: Biome `recommended` ruleset; `npm run lint` is required.
 - **Complexity budget**: Max cyclomatic complexity 10 per function (ESLint `complexity` rule).
-- **Diff budget**: Total change ≤ 500 lines, per-file ≤ 200 lines (enforced by `npm run diff-budget`, excluding `package-lock.json`, `docs/`, `.pi/extensions/scribe/prompts/`, and `pi-mono/`).
+- **Diff budget**: Total change ≤ 500 lines, per-file ≤ 200 lines (enforced by `npm run diff-budget`, excluding `package-lock.json`, `.scribe/`, `.pi/extensions/scribe/prompts/`, and `pi-mono/`).
 - **Security audit**: `npm run audit` (dependency audit, secret scan via gitleaks, SAST via semgrep, SBOM via cyclonedx). Requires `gitleaks` and `semgrep` binaries installed. SBOM is generated as an untracked artifact under `sbom/`.
 
 ## Project Structure
 - `.pi/extensions/scribe/index.ts`: core extension logic and event handler registration.
 - `.pi/extensions/scribe/prompts/`:
   - `scribe.md`: extracts candidate decisions.
-  - `editor.md`: merges candidates into `docs/CONVENTIONS.md`.
-- `docs/DECISIONS.md`: append-only record of decision candidates.
-- `docs/CONVENTIONS.md`: curated, compact set of active conventions.
+  - `editor.md`: merges candidates into `.scribe/CONVENTIONS.md`.
+- `.scribe/DECISIONS.md`: append-only record of decision candidates.
+- `.scribe/CONVENTIONS.md`: curated, compact set of active conventions.
 
 ## Architecture (Runtime Flow)
 1. `agent_end` fires.
 2. Extension increments an in-memory turn counter.
 3. On cadence:
-   - **Scribe run**: collect recent turns, fill `scribe.md`, call the active model, append to `docs/DECISIONS.md`.
-   - **Editor run**: read `docs/DECISIONS.md`, fill `editor.md`, call the active model, rewrite `docs/CONVENTIONS.md`.
+   - **Scribe run**: collect recent turns, fill `scribe.md`, call the active model, append to `.scribe/DECISIONS.md`.
+   - **Editor run**: read `.scribe/DECISIONS.md`, fill `editor.md`, call the active model, rewrite `.scribe/CONVENTIONS.md`.
 4. Writes are serialized per-file using `withFileMutationQueue()`.
 5. While tasks are running, the UI shows `Scribing...` or `Editorializing...` via the working message indicator.
 6. The footer shows counters: `Scribe X/1`, `Editor Y/3`, plus last run status (`Scribe ✓ HH:MM`, `Editor ✓ HH:MM`).

@@ -354,7 +354,7 @@ export const execScribe = async (
 	}
 
 	const safeOutput = enforceOutputLimit(output, "scribe");
-	const decisionsPath = resolve(ctx.cwd, "docs", "DECISIONS.md");
+	const decisionsPath = resolve(ctx.cwd, ".scribe", "DECISIONS.md");
 	const queue = resolveMutationQueue(options, "decisions");
 
 	await queue(decisionsPath, async () => {
@@ -373,7 +373,7 @@ export const execEditor = async (
 	promptExecutor: PromptExecutor = executePrompt,
 	options?: { queue?: (path: string, fn: () => Promise<void>) => Promise<void> },
 ) => {
-	const decisionsPath = resolve(ctx.cwd, "docs", "DECISIONS.md");
+	const decisionsPath = resolve(ctx.cwd, ".scribe", "DECISIONS.md");
 	if (!existsSync(decisionsPath)) {
 		return;
 	}
@@ -383,7 +383,7 @@ export const execEditor = async (
 		return;
 	}
 
-	const conventionsPath = resolve(ctx.cwd, "docs", "CONVENTIONS.md");
+	const conventionsPath = resolve(ctx.cwd, ".scribe", "CONVENTIONS.md");
 	const currentConventions = existsSync(conventionsPath)
 		? readFileSync(conventionsPath, "utf-8").trim() || "None."
 		: "None.";

@@ -6,7 +6,7 @@ Implement a project-local pi extension that captures durable decisions and conve
 ## Preconditions
 - Prompts live at `.pi/extensions/scribe/prompts/` (`scribe.md`, `editor.md`).
 - Extension entry point: `.pi/extensions/scribe/index.ts`.
-- Output files: `docs/DECISIONS.md`, `docs/CONVENTIONS.md`.
+- Output files: `.scribe/DECISIONS.md`, `.scribe/CONVENTIONS.md`.
 - Cadence: scribe every 1 turn, editor every 3 turns.
 
 ## Delivery Phases
@@ -55,10 +55,10 @@ Implement a project-local pi extension that captures durable decisions and conve
 
 ### Integration Tests (side effects isolated)
 - **Scribe run**
-  - Given stubbed prompt output, appends to `docs/DECISIONS.md` in a temp directory.
+  - Given stubbed prompt output, appends to `.scribe/DECISIONS.md` in a temp directory.
   - Enforces output size limits and throws with fix path on violation.
 - **Editor run**
-  - Reads `docs/DECISIONS.md` and rewrites `docs/CONVENTIONS.md` with stubbed output.
+  - Reads `.scribe/DECISIONS.md` and rewrites `.scribe/CONVENTIONS.md` with stubbed output.
   - No-op when decisions file missing or empty.
 - **Cadence behavior**
   - Runs scribe on turn 1, editor on turn 3; does not run on other turns.

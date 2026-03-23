@@ -117,7 +117,7 @@ test("execScribe appends decisions and uses mutation queue", async () => {
 	const output = buildDecisionOutput();
 	await execScribe(promptPath, ctx, 1, async () => output, { queue });
 
-	const decisionsPath = resolve(cwd, "docs", "DECISIONS.md");
+	const decisionsPath = resolve(cwd, ".scribe", "DECISIONS.md");
 	const content = await readFile(decisionsPath, "utf-8");
 	assert.equal(
 		content,
@@ -200,23 +200,23 @@ test("execScribe logs prompt and output when debug enabled", async () => {
 
 test("execEditor rewrites conventions when decisions exist", async () => {
 	const cwd = await createTempDir();
-	await mkdir(resolve(cwd, "docs"), { recursive: true });
-	await writeFile(resolve(cwd, "docs", "DECISIONS.md"), "# Decisions\n\nDecision");
+	await mkdir(resolve(cwd, ".scribe"), { recursive: true });
+	await writeFile(resolve(cwd, ".scribe", "DECISIONS.md"), "# Decisions\n\nDecision");
 	const promptPath = join(cwd, "editor.md");
 	await writeFile(promptPath, "{{currentConventions}}\n{{newCandidates}}\n{Short title}");
 	const ctx = createContext({ cwd });
 
 	await execEditor(promptPath, ctx, async () => "Convention");
 
-	const conventionsPath = resolve(cwd, "docs", "CONVENTIONS.md");
+	const conventionsPath = resolve(cwd, ".scribe", "CONVENTIONS.md");
 	const content = await readFile(conventionsPath, "utf-8");
 	assert.equal(content, "Convention\n");
 });
 
 test("execEditor fails fast when queue is invalid", async () => {
 	const cwd = await createTempDir();
-	await mkdir(resolve(cwd, "docs"), { recursive: true });
-	await writeFile(resolve(cwd, "docs", "DECISIONS.md"), "# Decisions\n\nDecision");
+	await mkdir(resolve(cwd, ".scribe"), { recursive: true });
+	await writeFile(resolve(cwd, ".scribe", "DECISIONS.md"), "# Decisions\n\nDecision");
 	const promptPath = join(cwd, "editor.md");
 	await writeFile(promptPath, "{{currentConventions}}\n{{newCandidates}}\n{Short title}");
 	const ctx = createContext({ cwd });
@@ -232,8 +232,8 @@ test("execEditor fails fast when queue is invalid", async () => {
 
 test("execEditor logs prompt and output when debug enabled", async () => {
 	const cwd = await createTempDir();
-	await mkdir(resolve(cwd, "docs"), { recursive: true });
-	await writeFile(resolve(cwd, "docs", "DECISIONS.md"), "# Decisions\n\nDecision");
+	await mkdir(resolve(cwd, ".scribe"), { recursive: true });
+	await writeFile(resolve(cwd, ".scribe", "DECISIONS.md"), "# Decisions\n\nDecision");
 	const promptPath = join(cwd, "editor.md");
 	await writeFile(promptPath, "Current: {{currentConventions}}\nDecisions: {{newCandidates}}");
 	const ctx = createContext({ cwd });
@@ -315,7 +315,10 @@ test("execEditor is a no-op when decisions are missing", async () => {
 
 	await execEditor(promptPath, ctx, async () => "Convention");
 
-	await assert.rejects(() => readFile(resolve(cwd, "docs", "CONVENTIONS.md"), "utf-8"), /ENOENT/);
+	await assert.rejects(
+		() => readFile(resolve(cwd, ".scribe", "CONVENTIONS.md"), "utf-8"),
+		/ENOENT/,
+	);
 });
 
 test("createAgentEndHandler triggers cadence", async () => {
