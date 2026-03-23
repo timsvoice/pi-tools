@@ -18,7 +18,8 @@
 		"audit:secrets": "gitleaks detect --source . --no-git",
 		"audit:sast": "semgrep --config=auto",
 		"audit:sbom": "cyclonedx-npm --omit dev --output-file sbom/sbom.json",
-		"prepare": "husky install"
+		"prepare": "husky install",
+		"verify": "npm test && npm run lint && npm run lint:complexity && npm run promptfoo && npm run audit"
 	},
 	"devDependencies": {
 		"@biomejs/biome": "^1.8.3",

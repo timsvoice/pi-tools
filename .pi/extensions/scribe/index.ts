@@ -2,6 +2,7 @@ import { existsSync } from "node:fs";
 import { mkdir, readFile, writeFile } from "node:fs/promises";
 import { dirname, join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
+import { type Message, complete } from "@mariozechner/pi-ai";
 import {
 	DEFAULT_MAX_BYTES,
 	DEFAULT_MAX_LINES,
@@ -10,17 +11,44 @@ import {
 	withFileMutationQueue,
 } from "@mariozechner/pi-coding-agent";
 import type { ExtensionAPI, ExtensionContext } from "@mariozechner/pi-coding-agent";
-import { buildConventionsContent, buildDecisionsContent } from "./decisions.ts";
-import { executePrompt, type PromptExecutor } from "./executor.ts";
-import { formatRecentTurns, getPrompt, selectRecentMessages } from "./prompts.ts";
-
-export { buildConventionsContent, buildDecisionsContent } from "./decisions.ts";
-export { executePrompt, type PromptExecutor } from "./executor.ts";
-export { fillPromptTemplate, selectRecentMessages } from "./prompts.ts";
 
 const SCRIBE_INTERVAL_TURNS = 1;
 const EDITOR_INTERVAL_TURNS = 3;
 const baseDir = dirname(fileURLToPath(import.meta.url));
+
+type AgentMessage = { role?: string; content?: unknown };
+
+export type PromptExecutor = (
+	prompt: string,
+	ctx: ExtensionContext,
+	options?: { completeFn?: typeof complete },
+) => Promise<string>;
+
+export const fillPromptTemplate = (template: string, replacements: Record<string, string>) => {
+	for (const key of Object.keys(replacements)) {
+		if (!template.includes(`{{${key}}}`)) {
+			throw new Error(`Prompt template missing required placeholder: ${key}.`);
+		}
+	}
+
+	let filled = template;
+	for (const [key, value] of Object.entries(replacements)) {
+		filled = filled.replaceAll(`{{${key}}}`, value);
+	}
+
+	for (const key of Object.keys(replacements)) {
+		if (filled.includes(`{{${key}}}`)) {
+			throw new Error(`Prompt template has unresolved placeholder: ${key}.`);
+		}
+	}
+
+	return filled;
+};
+
+const getPrompt = async (path: string, replacements: Record<string, string>) => {
+	const template = await readFile(path, "utf-8");
+	return fillPromptTemplate(template, replacements);
+};
 
 const writeToFile = async (path: string, content: string) => {
 	const dir = dirname(path);
@@ -30,8 +58,112 @@ const writeToFile = async (path: string, content: string) => {
 
 const getDecisionsPath = (ctx: ExtensionContext) => resolve(ctx.cwd, ".scribe", "DECISIONS.md");
 
-const getConventionsPath = (ctx: ExtensionContext) =>
-	resolve(ctx.cwd, ".scribe", "CONVENTIONS.md");
+const getConventionsPath = (ctx: ExtensionContext) => resolve(ctx.cwd, ".scribe", "CONVENTIONS.md");
+
+export const executePrompt: PromptExecutor = async (
+	prompt: string,
+	ctx: ExtensionContext,
+	options?: { completeFn?: typeof complete },
+) => {
+	const model = ctx.model;
+	if (!model) {
+		throw new Error(
+			"Scribe extension failed to execute prompt: no active model. Fix: select a model with /model.",
+		);
+	}
+
+	const apiKey = await ctx.modelRegistry.getApiKey(model);
+	if (!apiKey) {
+		throw new Error(
+			`Scribe extension failed to execute prompt: missing API key for ${model.provider}/${model.id}. Fix: configure the provider key in settings or run /login.`,
+		);
+	}
+
+	const messages: Message[] = [
+		{
+			role: "user",
+			content: [{ type: "text", text: prompt }],
+			timestamp: Date.now(),
+		},
+	];
+
+	const completeFn = options?.completeFn ?? complete;
+
+	const response = await completeFn(
+		model,
+		{ systemPrompt: "Follow the user's instructions.", messages },
+		{ apiKey },
+	);
+
+	const output = response.content
+		.filter((block): block is { type: "text"; text: string } => block.type === "text")
+		.map((block) => block.text)
+		.join("\n")
+		.trim();
+
+	return output;
+};
+
+export const selectRecentMessages = (
+	entries: Array<{ type: string; message?: AgentMessage }>,
+	windowTurns: number,
+): AgentMessage[] => {
+	const recentMessages: AgentMessage[] = [];
+	// Buffer assistant replies until we confirm the associated user turn is within the window.
+	const pendingAssistants: AgentMessage[] = [];
+	let userTurns = 0;
+
+	for (let index = entries.length - 1; index >= 0; index -= 1) {
+		const entry = entries[index];
+		if (!entry || entry.type !== "message") {
+			continue;
+		}
+
+		const message = entry.message as AgentMessage;
+		if (!message || (message.role !== "user" && message.role !== "assistant")) {
+			continue;
+		}
+
+		if (message.role === "assistant") {
+			pendingAssistants.push(message);
+			continue;
+		}
+
+		if (userTurns + 1 > windowTurns) {
+			break;
+		}
+
+		for (const assistant of pendingAssistants) {
+			recentMessages.unshift(assistant);
+		}
+		pendingAssistants.length = 0;
+		userTurns += 1;
+		recentMessages.unshift(message);
+	}
+
+	return recentMessages;
+};
+
+const formatRecentTurns = (recentMessages: AgentMessage[]) =>
+	recentMessages
+		.map((message) => {
+			const role = message.role === "user" ? "User" : "Assistant";
+			const content = message.content;
+			if (typeof content === "string") {
+				return `${role}: ${content.trim()}`;
+			}
+			if (!Array.isArray(content)) {
+				return `${role}:`;
+			}
+			const textParts = content
+				.filter((block) => block && typeof block === "object" && "type" in block)
+				.filter((block) => (block as { type?: string }).type === "text")
+				.map((block) => (block as { text?: string }).text ?? "")
+				.filter((text) => text.trim().length > 0);
+			return textParts.length > 0 ? `${role}: ${textParts.join("\n")}` : `${role}:`;
+		})
+		.filter((line) => line.trim().length > 0)
+		.join("\n\n");
 
 const enforceOutputLimit = (output: string, label: string): string => {
 	const truncation = truncateHead(output, {
@@ -147,6 +279,115 @@ const setLastRunStatus = (
 		`${kind}-last`,
 		formatFooterText(ctx, `${label} ${symbol} ${formatTimestamp(timestamp)}`),
 	);
+};
+
+type DecisionOutput = {
+	status: "decision" | "no_decision";
+	title: string;
+	type: string;
+	decision: string;
+	why: string;
+	impact: string;
+	invalidation: string;
+};
+
+const DECISION_FIELDS: Array<Exclude<keyof DecisionOutput, "status">> = [
+	"title",
+	"type",
+	"decision",
+	"why",
+	"impact",
+	"invalidation",
+];
+
+const parseDecisionOutput = (output: string): DecisionOutput => {
+	const trimmed = output.trim();
+	if (!trimmed) {
+		throw new Error(
+			"Scribe extension failed to parse decision output: empty output. Fix: ensure the model returns JSON for decision capture.",
+		);
+	}
+
+	let parsed: unknown;
+	try {
+		parsed = JSON.parse(trimmed);
+	} catch (error) {
+		const message = error instanceof Error ? error.message : String(error);
+		throw new Error(
+			`Scribe extension failed to parse decision output: invalid JSON (${message}). Fix: ensure the scribe prompt returns a single JSON object.`,
+		);
+	}
+
+	if (!parsed || typeof parsed !== "object" || Array.isArray(parsed)) {
+		throw new Error(
+			"Scribe extension failed to parse decision output: JSON must be an object. Fix: ensure the scribe prompt returns a single JSON object.",
+		);
+	}
+
+	const payload = parsed as Record<string, unknown>;
+	const status = payload.status;
+	if (typeof status !== "string") {
+		throw new Error(
+			"Scribe extension failed to parse decision output: missing status. Fix: ensure status is a string.",
+		);
+	}
+	if (status !== "decision" && status !== "no_decision") {
+		throw new Error(
+			'Scribe extension failed to parse decision output: invalid status. Fix: ensure status is "decision" or "no_decision".',
+		);
+	}
+
+	const decision: DecisionOutput = {
+		status,
+		title: "",
+		type: "",
+		decision: "",
+		why: "",
+		impact: "",
+		invalidation: "",
+	};
+
+	for (const field of DECISION_FIELDS) {
+		const value = payload[field];
+		if (typeof value === "string") {
+			decision[field] = value;
+		}
+	}
+
+	return decision;
+};
+
+const formatDecisionTemplate = (decision: DecisionOutput): string =>
+	[
+		`## ${decision.title}`,
+		"",
+		`- Status: ${decision.status}`,
+		`- Title: ${decision.title}`,
+		`- Type: ${decision.type}`,
+		`- Decision: ${decision.decision}`,
+		`- Why: ${decision.why}`,
+		`- Impact: ${decision.impact}`,
+		`- Invalidation: ${decision.invalidation}`,
+		"",
+	].join("\n");
+
+export const buildDecisionsContent = (existing: string, output: string): string | null => {
+	const parsed = parseDecisionOutput(output);
+	if (parsed.status === "no_decision") {
+		return null;
+	}
+
+	const trimmedExisting = existing.trim();
+	const header = trimmedExisting.length === 0 ? "# Decisions\n\n" : `${trimmedExisting}\n\n`;
+	return `${header}${formatDecisionTemplate(parsed)}`;
+};
+
+export const buildConventionsContent = (output: string): string | null => {
+	const trimmedOutput = output.trim();
+	if (!trimmedOutput) {
+		return null;
+	}
+	return `${trimmedOutput}\n`;
 };
 
 const resolveMutationQueue = (
