@@ -6,6 +6,9 @@ Project-local pi extension that captures durable decisions and conventions from 
 - Place in `.pi/extensions/scribe/` (this repo already does).
 - Start pi from the repo root and run `/reload` to hot-load changes.
 
+## Requirements
+- Node.js >= 22 (see `.nvmrc`).
+
 ## Behavior
 - Runs on `agent_end`.
 - Scribe cadence: every 1 turn.
