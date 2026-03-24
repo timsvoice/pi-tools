@@ -2,12 +2,7 @@ import { execSync } from "node:child_process";
 
 const TOTAL_BUDGET = 500;
 const FILE_BUDGET = 200;
-const IGNORE_PATHS = [
-	"package-lock.json",
-	".scribe/",
-	".pi/extensions/scribe/prompts/",
-	"pi-mono/",
-];
+const IGNORE_PATHS = ["package-lock.json", ".scribe/", "extensions/scribe/prompts/", "pi-mono/"];
 
 const run = (command) => execSync(command, { encoding: "utf8" }).trim();
 

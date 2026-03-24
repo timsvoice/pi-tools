@@ -3,7 +3,7 @@
 description: Scribe decision intake prompt evaluation
 
 prompts:
-  - file://.pi/extensions/scribe/prompts/scribe.md
+  - file://extensions/scribe/prompts/scribe.md
 
 providers:
   - id: openrouter:openai/gpt-5-mini

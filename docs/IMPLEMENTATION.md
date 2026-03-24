@@ -4,8 +4,8 @@
 Implement a project-local pi extension that captures durable decisions and conventions per `docs/PLAN.md`. The agent must generate a full, runnable test suite before writing any implementation code. The task is complete only when all tests pass.
 
 ## Preconditions
-- Prompts live at `.pi/extensions/scribe/prompts/` (`scribe.md`, `editor.md`).
-- Extension entry point: `.pi/extensions/scribe/index.ts`.
+- Prompts live at `extensions/scribe/prompts/` (`scribe.md`, `editor.md`).
+- Extension entry point: `extensions/scribe/index.ts`.
 - Output files: `.scribe/DECISIONS.md`, `.scribe/CONVENTIONS.md`.
 - Cadence: scribe every 1 turn, editor every 3 turns.
 

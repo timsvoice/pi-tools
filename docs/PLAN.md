@@ -24,7 +24,7 @@ pi-scribe is a project-local pi extension that captures durable engineering deci
 
 ## Functional Requirements
 1. **Cadence**: Run scribe every 1 turn and editor every 3 turns.
-2. **Prompting**: Use prompt templates from `.pi/extensions/scribe/prompts/`.
+2. **Prompting**: Use prompt templates from `extensions/scribe/prompts/`.
 3. **Input windowing**: Base scribe input on the most recent N user turns, preserving order.
 4. **Outputs**:
    - `.scribe/DECISIONS.md` is append-only, includes a header when empty, and stores a markdown decision template derived from the scribe JSON output.
@@ -45,12 +45,12 @@ pi-scribe is a project-local pi extension that captures durable engineering deci
 ## Quality Gates
 - **Linting**: Biome `recommended` ruleset; `npm run lint` is required.
 - **Complexity budget**: Max cyclomatic complexity 10 per function (ESLint `complexity` rule).
-- **Diff budget**: Total change ≤ 500 lines, per-file ≤ 200 lines (enforced by `npm run diff-budget`, excluding `package-lock.json`, `.scribe/`, `.pi/extensions/scribe/prompts/`, and `pi-mono/`).
+- **Diff budget**: Total change ≤ 500 lines, per-file ≤ 200 lines (enforced by `npm run diff-budget`, excluding `package-lock.json`, `.scribe/`, `extensions/scribe/prompts/`, and `pi-mono/`).
 - **Security audit**: `npm run audit` (dependency audit, secret scan via gitleaks, SAST via semgrep, SBOM via cyclonedx). Requires `gitleaks` and `semgrep` binaries installed. SBOM is generated as an untracked artifact under `sbom/`.
 
 ## Project Structure
-- `.pi/extensions/scribe/index.ts`: core extension logic and event handler registration.
-- `.pi/extensions/scribe/prompts/`:
+- `extensions/scribe/index.ts`: core extension logic and event handler registration.
+- `extensions/scribe/prompts/`:
   - `scribe.md`: extracts candidate decisions.
   - `editor.md`: merges candidates into `.scribe/CONVENTIONS.md`.
 - `.scribe/DECISIONS.md`: append-only record of decision candidates.
@@ -108,5 +108,5 @@ pi-scribe is a project-local pi extension that captures durable engineering deci
 - Verify working message updates clear when runs complete.
 
 ## Rollout / Rollback
-- Rollout: update `.pi/extensions/scribe/index.ts` and reload extensions (`/reload`, see `reload-runtime.ts`).
+- Rollout: update `extensions/scribe/index.ts` and reload extensions (`/reload`, see `reload-runtime.ts`).
 - Rollback: revert the extension file and reload; remove generated docs if needed.

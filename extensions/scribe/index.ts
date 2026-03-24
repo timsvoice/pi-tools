@@ -14,6 +14,7 @@ import type { ExtensionAPI, ExtensionContext } from "@mariozechner/pi-coding-age
 
 const SCRIBE_INTERVAL_TURNS = 1;
 const EDITOR_INTERVAL_TURNS = 3;
+
 const baseDir = dirname(fileURLToPath(import.meta.url));
 
 type AgentMessage = { role?: string; content?: unknown };
@@ -300,7 +301,7 @@ const DECISION_FIELDS: Array<Exclude<keyof DecisionOutput, "status">> = [
 	"invalidation",
 ];
 
-const parseDecisionOutput = (output: string): DecisionOutput => {
+const parseDecisionPayload = (output: string): Record<string, unknown> => {
 	const trimmed = output.trim();
 	if (!trimmed) {
 		throw new Error(
@@ -324,7 +325,10 @@ const parseDecisionOutput = (output: string): DecisionOutput => {
 		);
 	}
 
-	const payload = parsed as Record<string, unknown>;
+	return parsed as Record<string, unknown>;
+};
+
+const parseDecisionStatus = (payload: Record<string, unknown>): DecisionOutput["status"] => {
 	const status = payload.status;
 	if (typeof status !== "string") {
 		throw new Error(
@@ -336,7 +340,12 @@ const parseDecisionOutput = (output: string): DecisionOutput => {
 			'Scribe extension failed to parse decision output: invalid status. Fix: ensure status is "decision" or "no_decision".',
 		);
 	}
+	return status;
+};
 
+const parseDecisionOutput = (output: string): DecisionOutput => {
+	const payload = parseDecisionPayload(output);
+	const status = parseDecisionStatus(payload);
 	const decision: DecisionOutput = {
 		status,
 		title: "",
