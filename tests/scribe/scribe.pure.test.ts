@@ -6,7 +6,7 @@ import {
 	buildDecisionsContent,
 	fillPromptTemplate,
 	selectRecentMessages,
-} from "../extensions/scribe/index.ts";
+} from "../../extensions/scribe/index.ts";
 
 test("fillPromptTemplate replaces required placeholders", () => {
 	const template = "Hello {{name}}, welcome to {{place}}.";

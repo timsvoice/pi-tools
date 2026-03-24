@@ -9,7 +9,7 @@ import {
 	execEditor,
 	execScribe,
 	executePrompt,
-} from "../extensions/scribe/index.ts";
+} from "../../extensions/scribe/index.ts";
 
 type MessageEntry = { type: "message"; message: { role: string; content: string } };
 
@@ -340,7 +340,7 @@ test("session_start seeds counter status", async () => {
 		},
 	};
 
-	const extension = await import("../extensions/scribe/index.ts");
+	const extension = await import("../../extensions/scribe/index.ts");
 	extension.default(pi as unknown as { on: typeof pi.on });
 
 	if (!sessionStart) {

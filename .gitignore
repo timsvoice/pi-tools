@@ -11,3 +11,5 @@ pi-mono/
 sbom/
 
 .env
+
+.scribe/
