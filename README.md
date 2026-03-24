@@ -20,6 +20,8 @@ Personal extensions for the [Pi coding agent](https://github.com/badlogic/pi-mon
 pi install git:github.com/timsvoice/pi-tools
 ```
 
+Pi clones packages under `~/.pi/agent/git/...` and loads resources from the package; it does not copy extensions into `~/.pi/agent/extensions`.
+
 To enable only a subset, replace the package entry in `~/.pi/agent/settings.json` with a filtered one:
 
 ```json
@@ -27,7 +29,7 @@ To enable only a subset, replace the package entry in `~/.pi/agent/settings.json
   "packages": [
     {
       "source": "git:github.com/timsvoice/pi-tools",
-      "extensions": ["extensions/scribe/index.ts"]
+      "extensions": ["extensions/scribe"]
     }
   ]
 }
