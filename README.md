@@ -9,6 +9,9 @@ Project-local pi extension that captures durable decisions and conventions from 
 ## Requirements
 - Node.js >= 22 (see `.nvmrc`).
 
+## Documentation
+- `docs/extensions/scribe/` for extension-specific docs.
+
 ## Behavior
 - Runs on `agent_end`.
 - Scribe cadence: every 1 turn.
