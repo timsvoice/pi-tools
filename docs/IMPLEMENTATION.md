@@ -1,7 +1,7 @@
 # Implementation Plan: pi-scribe
 
 ## Goal
-Implement a project-local pi extension that captures durable decisions and conventions per `docs/extensions/scribe/PLAN.md`. The agent must generate a full, runnable test suite before writing any implementation code. The task is complete only when all tests pass.
+Implement a project-local pi extension that captures durable decisions and conventions per `docs/PLAN.md`. The agent must generate a full, runnable test suite before writing any implementation code. The task is complete only when all tests pass.
 
 ## Preconditions
 - Prompts live at `extensions/scribe/prompts/` (`scribe.md`, `editor.md`).
@@ -16,7 +16,7 @@ Implement a project-local pi extension that captures durable decisions and conve
    - Ensure tests cover error paths, output limits, UI status behavior, and file mutation queue usage.
    - All tests must fail before implementation code exists.
 2. **Implementation**
-   - Implement extension logic to satisfy tests and `docs/extensions/scribe/PLAN.md`.
+   - Implement extension logic to satisfy tests and `docs/PLAN.md`.
 3. **Verification**
    - Run the full test suite; only declare completion when green.
 
@@ -91,12 +91,11 @@ Implement a project-local pi extension that captures durable decisions and conve
 ## Quality Gates
 - `npm run lint` passes (Biome).
 - `npm run lint:complexity` passes (max cyclomatic complexity 10).
-- `npm run diff-budget` passes (≤ 500 total lines, ≤ 200 lines per file).
 - `npm run audit` passes (dependency audit, gitleaks, semgrep, SBOM generation). Requires `gitleaks` and `semgrep` binaries installed. SBOM output is an untracked artifact under `sbom/`.
 
 ## Acceptance Criteria
 - All tests pass in a closed loop.
-- Extension behavior matches cadence, file outputs, error handling, and UI feedback rules in `docs/extensions/scribe/PLAN.md`.
+- Extension behavior matches cadence, file outputs, error handling, and UI feedback rules in `docs/PLAN.md`.
 - Quality gates pass.
 
 ## Execution Checklist (for the coding agent)

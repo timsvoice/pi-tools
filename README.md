@@ -1,47 +1,48 @@
-# pi-scribe
+# pi-tools
 
-Project-local pi extension that captures durable decisions and conventions from recent conversation turns.
+Personal extensions for the [Pi coding agent](https://github.com/badlogic/pi-mono).
 
-## Install / Load
-- Place in `extensions/scribe/` (this repo already does).
-- Start pi from the repo root and run `/reload` to hot-load changes.
+## Extensions
 
-## Requirements
-- Node.js >= 22 (see `.nvmrc`).
+| Extension | Description |
+|-----------|-------------|
+| [scribe](extensions/scribe/) | Capture durable engineering decisions and conventions from recent conversation turns. |
 
-## Documentation
-- `docs/extensions/scribe/` for extension-specific docs.
+## Skills
 
-## Behavior
-- Runs on `agent_end`.
-- Scribe cadence: every 1 turn.
-- Editor cadence: every 3 turns.
-- Working message shows `Scribing...` / `Editorializing...` during runs and clears on completion. Errors show as `Scribe error: ...`.
-- Footer counters show `Scribe X/1` and `Editor Y/3` each turn.
-- Footer shows last run status: `Scribe ✓ HH:MM`, `Editor ✓ HH:MM` (or ✗ on failure).
+| Skill | Description |
+|-------|-------------|
+| _TBD_ | _TBD_ |
 
-## Outputs
-- `.scribe/DECISIONS.md` (append-only, header on first write). JSON model output is transformed into a markdown decision template containing all fields.
-- `.scribe/CONVENTIONS.md` (fully rewritten per editor run)
+## Install (pi package manager)
 
-## Testing
-Before every commit, run all tests, including promptfoo.
 ```bash
-npm test
-npm run lint
-npm run lint:complexity
-npm run promptfoo
+pi install git:github.com/timsvoice/pi-tools
 ```
 
-## Prompt evaluation (promptfoo)
-```bash
-# Requires OPENROUTER_API_KEY (see .example.env)
-npm run promptfoo
-```
-Promptfoo uses `extensions/scribe/prompts/scribe.md` with `tests/promptfoo/scribe.tests.yaml` for include/exclude cases.
+To enable only a subset, replace the package entry in `~/.pi/agent/settings.json` with a filtered one:
 
-## Security audit
-```bash
-npm run audit
+```json
+{
+  "packages": [
+    {
+      "source": "git:github.com/timsvoice/pi-tools",
+      "extensions": ["extensions/scribe/index.ts"]
+    }
+  ]
+}
 ```
-Requires `gitleaks` and `semgrep` binaries installed. SBOM is generated as an untracked artifact under `sbom/`.
+
+## Quick Setup
+
+If you keep a local clone, add extensions to your `~/.pi/agent/settings.json`:
+
+```json
+{
+  "extensions": [
+    "~/pi-tools/extensions/scribe"
+  ]
+}
+```
+
+See each extension's README for details.

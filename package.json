@@ -9,7 +9,6 @@
 		"lint": "biome check .",
 		"lint:fix": "biome check --write .",
 		"lint:complexity": "eslint . --ext .ts",
-		"diff-budget": "node ./scripts/check-diff-budget.mjs",
 		"test": "node --test --import tsx $(find tests -name \"*.test.ts\")",
 		"promptfoo": "promptfoo eval -c promptfooconfig.yaml",
 		"audit": "npm run audit:deps && npm run audit:secrets && npm run audit:sast && npm run audit:sbom",

@@ -45,7 +45,6 @@ pi-scribe is a project-local pi extension that captures durable engineering deci
 ## Quality Gates
 - **Linting**: Biome `recommended` ruleset; `npm run lint` is required.
 - **Complexity budget**: Max cyclomatic complexity 10 per function (ESLint `complexity` rule).
-- **Diff budget**: Total change ≤ 500 lines, per-file ≤ 200 lines (enforced by `npm run diff-budget`, excluding `package-lock.json`, `.scribe/`, `extensions/scribe/prompts/`, and `pi-mono/`).
 - **Security audit**: `npm run audit` (dependency audit, secret scan via gitleaks, SAST via semgrep, SBOM via cyclonedx). Requires `gitleaks` and `semgrep` binaries installed. SBOM is generated as an untracked artifact under `sbom/`.
 
 ## Project Structure
