@@ -23,14 +23,14 @@ pi-scribe is a project-local pi extension that captures durable engineering deci
 - Provider credentials are configured externally (settings or `/login`).
 
 ## Functional Requirements
-1. **Cadence**: Run scribe every 1 turn and editor every 3 turns.
+1. **Cadence**: Run scribe every 10 turns and editor every 30 turns.
 2. **Prompting**: Use prompt templates from `extensions/scribe/prompts/`.
 3. **Input windowing**: Base scribe input on the most recent N user turns, preserving order.
 4. **Outputs**:
    - `.scribe/DECISIONS.md` is append-only, includes a header when empty, and stores a markdown decision template derived from the scribe JSON output.
    - `.scribe/CONVENTIONS.md` is fully rewritten each editor run.
 5. **UI feedback**: While running, display `Scribing...` or `Editorializing...` via the working message indicator (clears on completion).
-6. **UI counters**: Always show turn counters in the footer: `Scribe X/1` and `Editor Y/3` (when `ctx.hasUI`).
+6. **UI counters**: Always show turn counters in the footer: `Scribe X/10` and `Editor Y/30` (when `ctx.hasUI`).
 7. **Run status**: Show last run outcome + timestamp in the footer (e.g., `Scribe ✓ 12:34`, `Editor ✗ 12:34`).
 8. **Error messaging**: Fail fast with actionable errors and surface them in the working message indicator for debugging.
 
@@ -63,7 +63,7 @@ pi-scribe is a project-local pi extension that captures durable engineering deci
    - **Editor run**: read `.scribe/DECISIONS.md`, fill `editor.md`, call the active model, rewrite `.scribe/CONVENTIONS.md`.
 4. Writes are serialized per-file using `withFileMutationQueue()`.
 5. While tasks are running, the UI shows `Scribing...` or `Editorializing...` via the working message indicator.
-6. The footer shows counters: `Scribe X/1`, `Editor Y/3`, plus last run status (`Scribe ✓ HH:MM`, `Editor ✓ HH:MM`).
+6. The footer shows counters: `Scribe X/10`, `Editor Y/30`, plus last run status (`Scribe ✓ HH:MM`, `Editor ✓ HH:MM`).
 
 ## Implementation Notes
 - **Event handler**: `pi.on("agent_end", handler)`; run scribe/editor asynchronously.
@@ -72,16 +72,16 @@ pi-scribe is a project-local pi extension that captures durable engineering deci
 - **Windowing**: count user turns only; ignore non-user/assistant roles.
 - **Output guarding**: enforce size limits; if exceeded, throw with a fix path.
 - **UI feedback**: use `ctx.ui.setWorkingMessage("Scribing...")` / `ctx.ui.setWorkingMessage("Editorializing...")`; clear by calling `ctx.ui.setWorkingMessage()`.
-- **UI counters**: update `ctx.ui.setStatus("scribe-count", theme.fg("dim", "Scribe X/1"))` and `ctx.ui.setStatus("editor-count", theme.fg("dim", "Editor Y/3"))` on every turn; guard with `ctx.hasUI`.
+- **UI counters**: update `ctx.ui.setStatus("scribe-count", theme.fg("dim", "Scribe X/10"))` and `ctx.ui.setStatus("editor-count", theme.fg("dim", "Editor Y/30"))` on every turn; guard with `ctx.hasUI`.
 - **Run status**: update `ctx.ui.setStatus("scribe-last", theme.fg("dim", "Scribe ✓ HH:MM"))` and `ctx.ui.setStatus("editor-last", theme.fg("dim", "Editor ✓ HH:MM"))` on completion (or ✗ on failure).
 - **Reload behavior**: changes to extensions require `/reload` for hot-reload testing (see `reload-runtime.ts`).
 - **Error handling**: catch background errors, log, notify via `ctx.ui.notify`, and surface a working-message error string.
 
 ## Acceptance Criteria
-- Decision candidates are appended at the 1-turn cadence without blocking user interaction.
-- Conventions are rewritten at the 3-turn cadence using the editor prompt.
+- Decision candidates are appended at the 10-turn cadence without blocking user interaction.
+- Conventions are rewritten at the 30-turn cadence using the editor prompt.
 - Working message updates appear during runs and clear afterward.
-- Footer counters update each turn with `Scribe X/1` and `Editor Y/3`.
+- Footer counters update each turn with `Scribe X/10` and `Editor Y/30`.
 - Footer run status updates with `Scribe ✓ HH:MM` / `Editor ✓ HH:MM` (or ✗ on failure).
 - Output size limits are enforced; over-limit outputs emit actionable errors.
 - Concurrent edits by built-in tools do not race with scribe writes.

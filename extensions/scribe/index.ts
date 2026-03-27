@@ -12,8 +12,8 @@ import {
 } from "@mariozechner/pi-coding-agent";
 import type { ExtensionAPI, ExtensionContext } from "@mariozechner/pi-coding-agent";
 
-const SCRIBE_INTERVAL_TURNS = 1;
-const EDITOR_INTERVAL_TURNS = 3;
+const SCRIBE_INTERVAL_TURNS = 10;
+const EDITOR_INTERVAL_TURNS = 30;
 
 const baseDir = dirname(fileURLToPath(import.meta.url));
 

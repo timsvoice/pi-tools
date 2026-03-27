@@ -4,8 +4,8 @@ Project-local pi extension that captures durable engineering decisions and curat
 
 ## What it does
 - Runs on `agent_end`.
-- Every turn: extracts decision candidates from recent conversation history.
-- Every 3 turns: merges candidates into a curated `.scribe/CONVENTIONS.md`.
+- Every 10 turns: extracts decision candidates from recent conversation history.
+- Every 30 turns: merges candidates into a curated `.scribe/CONVENTIONS.md`.
 
 ## Outputs
 - `.scribe/DECISIONS.md` — append-only list of decision candidates.
@@ -16,8 +16,8 @@ Project-local pi extension that captures durable engineering decisions and curat
 - `extensions/scribe/prompts/editor.md` — curates conventions.
 
 ## Cadence
-- Scribe: every 1 turn.
-- Editor: every 3 turns.
+- Scribe: every 10 turns.
+- Editor: every 30 turns.
 
 ## Requirements
 - Node.js >= 22 (see `.nvmrc`).
@@ -37,7 +37,7 @@ Start Pi from the repo root and run `/reload` after changes.
 
 ## UI behavior
 - Working message shows `Scribing...` / `Editorializing...` while running.
-- Footer counters show `Scribe X/1` and `Editor Y/3`.
+- Footer counters show `Scribe X/10` and `Editor Y/30`.
 - Footer last-run status shows `Scribe ✓ HH:MM` / `Editor ✓ HH:MM` (or ✗ on failure).
 
 ## Error handling
