@@ -11,7 +11,7 @@ import {
 	executePrompt,
 } from "../../extensions/scribe/index.ts";
 
-type MessageEntry = { type: "message"; message: { role: string; content: string } };
+type MessageEntry = { type: "message"; id: string; message: { role: string; content: string } };
 
 type StubContext = {
 	cwd: string;
@@ -37,7 +37,12 @@ type StubContext = {
 		options: { apiKey: string },
 	) => Promise<{ content: Array<{ type: string; text: string }> }>;
 	sessionManager: {
-		getBranch: () => Array<{ type: string; message?: { role?: string; content?: unknown } }>;
+		getSessionId: () => string;
+		getBranch: () => Array<{
+			type: string;
+			id?: string;
+			message?: { role?: string; content?: unknown };
+		}>;
 	};
 };
 
@@ -62,6 +67,7 @@ const buildDecisionOutput = (
 const createContext = (options: {
 	cwd: string;
 	branch?: MessageEntry[];
+	sessionId?: string;
 	hasUI?: boolean;
 	model?: { provider: string; id: string } | null;
 	apiKey?: string | null;
@@ -92,20 +98,21 @@ const createContext = (options: {
 		},
 		completeFn: options.completeFn,
 		sessionManager: {
+			getSessionId: () => options.sessionId ?? "test-session-id",
 			getBranch: () => options.branch ?? [],
 		},
 	} satisfies StubContext;
 };
 
-test("execScribe appends decisions and uses mutation queue", async () => {
+test("execScribe appends decisions with provenance and uses mutation queue", async () => {
 	const cwd = await createTempDir();
 	const promptPath = join(cwd, "scribe.md");
 	await writeFile(promptPath, "{{recentTurns}} {Short title}");
 	const branch: MessageEntry[] = [
-		{ type: "message", message: { role: "user", content: "u1" } },
-		{ type: "message", message: { role: "assistant", content: "a1" } },
+		{ type: "message", id: "m1", message: { role: "user", content: "u1" } },
+		{ type: "message", id: "m2", message: { role: "assistant", content: "a1" } },
 	];
-	const ctx = createContext({ cwd, branch });
+	const ctx = createContext({ cwd, branch, sessionId: "ses-abc-123" });
 	let queueCalled = false;
 	let queuedPath = "";
 	const queue = async (path: string, fn: () => Promise<void>) => {
@@ -133,6 +140,8 @@ test("execScribe appends decisions and uses mutation queue", async () => {
 			"- Why: not stated",
 			"- Impact: Teams do the thing.",
 			"- Invalidation: not stated",
+			"- Session: ses-abc-123",
+			"- Window: m1..m2",
 			"",
 		].join("\n"),
 	);
@@ -144,7 +153,9 @@ test("execScribe enforces output limits", async () => {
 	const cwd = await createTempDir();
 	const promptPath = join(cwd, "scribe.md");
 	await writeFile(promptPath, "{{recentTurns}} {Short title}");
-	const branch: MessageEntry[] = [{ type: "message", message: { role: "user", content: "u1" } }];
+	const branch: MessageEntry[] = [
+		{ type: "message", id: "m1", message: { role: "user", content: "u1" } },
+	];
 	const ctx = createContext({ cwd, branch });
 	const huge = "a".repeat(60 * 1024);
 
@@ -155,7 +166,9 @@ test("execScribe fails fast when queue is invalid", async () => {
 	const cwd = await createTempDir();
 	const promptPath = join(cwd, "scribe.md");
 	await writeFile(promptPath, "{{recentTurns}} {Short title}");
-	const branch: MessageEntry[] = [{ type: "message", message: { role: "user", content: "u1" } }];
+	const branch: MessageEntry[] = [
+		{ type: "message", id: "m1", message: { role: "user", content: "u1" } },
+	];
 	const ctx = createContext({ cwd, branch });
 
 	const output = buildDecisionOutput();

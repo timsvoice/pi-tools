@@ -2,6 +2,7 @@ import assert from "node:assert/strict";
 import { test } from "node:test";
 import fc from "fast-check";
 import {
+	type WindowResult,
 	buildConventionsContent,
 	buildDecisionsContent,
 	fillPromptTemplate,
@@ -29,42 +30,48 @@ test("fillPromptTemplate allows other braces", () => {
 
 test("selectRecentMessages includes last N user turns with assistants", () => {
 	const entries = [
-		{ type: "message", message: { role: "user", content: "one" } },
-		{ type: "message", message: { role: "assistant", content: "a1" } },
-		{ type: "message", message: { role: "user", content: "two" } },
-		{ type: "message", message: { role: "assistant", content: "a2" } },
-		{ type: "message", message: { role: "tool", content: "ignored" } },
-		{ type: "message", message: { role: "user", content: "three" } },
-		{ type: "message", message: { role: "assistant", content: "a3" } },
+		{ type: "message", id: "e1", message: { role: "user", content: "one" } },
+		{ type: "message", id: "e2", message: { role: "assistant", content: "a1" } },
+		{ type: "message", id: "e3", message: { role: "user", content: "two" } },
+		{ type: "message", id: "e4", message: { role: "assistant", content: "a2" } },
+		{ type: "message", id: "e5", message: { role: "tool", content: "ignored" } },
+		{ type: "message", id: "e6", message: { role: "user", content: "three" } },
+		{ type: "message", id: "e7", message: { role: "assistant", content: "a3" } },
 	];
 
 	const result = selectRecentMessages(entries, 2);
 	assert.deepEqual(
-		result.map((message) => message.content),
+		result.messages.map((message) => message.content),
 		["two", "a2", "three", "a3"],
 	);
+	assert.equal(result.startEntryId, "e3");
+	assert.equal(result.endEntryId, "e7");
 });
 
 test("selectRecentMessages skips orphan assistant messages", () => {
 	const entries = [
-		{ type: "message", message: { role: "assistant", content: "a0" } },
-		{ type: "message", message: { role: "user", content: "u1" } },
-		{ type: "message", message: { role: "assistant", content: "a1" } },
-		{ type: "message", message: { role: "user", content: "u2" } },
-		{ type: "message", message: { role: "assistant", content: "a2" } },
+		{ type: "message", id: "e1", message: { role: "assistant", content: "a0" } },
+		{ type: "message", id: "e2", message: { role: "user", content: "u1" } },
+		{ type: "message", id: "e3", message: { role: "assistant", content: "a1" } },
+		{ type: "message", id: "e4", message: { role: "user", content: "u2" } },
+		{ type: "message", id: "e5", message: { role: "assistant", content: "a2" } },
 	];
 
 	const result = selectRecentMessages(entries, 2);
 	assert.deepEqual(
-		result.map((message) => message.content),
+		result.messages.map((message) => message.content),
 		["u1", "a1", "u2", "a2"],
 	);
+	assert.equal(result.startEntryId, "e2");
+	assert.equal(result.endEntryId, "e5");
 });
 
 test("selectRecentMessages preserves order for generated sequences", () => {
 	const roleArb = fc.constantFrom("user", "assistant", "tool", "system");
+	let idCounter = 0;
 	const entryArb = fc.record({
 		type: fc.constant("message"),
+		id: fc.constant("").map(() => `gen-${idCounter++}`),
 		message: fc.record({
 			role: roleArb,
 			content: fc.string(),
@@ -74,7 +81,7 @@ test("selectRecentMessages preserves order for generated sequences", () => {
 	fc.assert(
 		fc.property(fc.array(entryArb, { minLength: 1, maxLength: 50 }), (entries) => {
 			const result = selectRecentMessages(entries, 3);
-			const indices = result.map((message) =>
+			const indices = result.messages.map((message) =>
 				entries.findIndex((entry) => entry.message === message),
 			);
 			for (let i = 1; i < indices.length; i += 1) {
@@ -82,6 +89,14 @@ test("selectRecentMessages preserves order for generated sequences", () => {
 			}
 		}),
 	);
+});
+
+test("selectRecentMessages returns null IDs for empty window", () => {
+	const entries = [{ type: "message", id: "e1", message: { role: "tool", content: "ignored" } }];
+	const result = selectRecentMessages(entries, 2);
+	assert.equal(result.messages.length, 0);
+	assert.equal(result.startEntryId, null);
+	assert.equal(result.endEntryId, null);
 });
 
 test("buildDecisionsContent appends with header when empty", () => {
@@ -94,7 +109,8 @@ test("buildDecisionsContent appends with header when empty", () => {
 		impact: "Developers must execute the full test suite prior to committing changes.",
 		invalidation: "not stated",
 	});
-	const result = buildDecisionsContent("", output);
+	const provenance = { sessionId: "ses-001", startEntryId: "a1b2", endEntryId: "c3d4" };
+	const result = buildDecisionsContent("", output, provenance);
 	assert.equal(
 		result,
 		[
@@ -109,6 +125,8 @@ test("buildDecisionsContent appends with header when empty", () => {
 			"- Why: not stated",
 			"- Impact: Developers must execute the full test suite prior to committing changes.",
 			"- Invalidation: not stated",
+			"- Session: ses-001",
+			"- Window: a1b2..c3d4",
 			"",
 		].join("\n"),
 	);
@@ -125,7 +143,8 @@ test("buildDecisionsContent appends to existing content", () => {
 		impact: "Standardized outputs",
 		invalidation: "not stated",
 	});
-	const result = buildDecisionsContent(existing, output);
+	const provenance = { sessionId: "ses-002", startEntryId: "x1", endEntryId: "x2" };
+	const result = buildDecisionsContent(existing, output, provenance);
 	assert.equal(
 		result,
 		[
@@ -142,6 +161,8 @@ test("buildDecisionsContent appends to existing content", () => {
 			"- Why: Consistency",
 			"- Impact: Standardized outputs",
 			"- Invalidation: not stated",
+			"- Session: ses-002",
+			"- Window: x1..x2",
 			"",
 		].join("\n"),
 	);
@@ -151,8 +172,9 @@ test("buildDecisionsContent allows missing fields", () => {
 	const output = JSON.stringify({
 		status: "decision",
 	});
+	const provenance = { sessionId: "ses-003", startEntryId: "s1", endEntryId: "s2" };
 	assert.equal(
-		buildDecisionsContent("", output),
+		buildDecisionsContent("", output, provenance),
 		[
 			"# Decisions",
 			"",
@@ -165,9 +187,27 @@ test("buildDecisionsContent allows missing fields", () => {
 			"- Why: ",
 			"- Impact: ",
 			"- Invalidation: ",
+			"- Session: ses-003",
+			"- Window: s1..s2",
 			"",
 		].join("\n"),
 	);
+});
+
+test("buildDecisionsContent omits provenance when not provided", () => {
+	const output = JSON.stringify({
+		status: "decision",
+		title: "No provenance",
+		type: "CONSTRAINT",
+		decision: "Rule.",
+		why: "Reason.",
+		impact: "Effect.",
+		invalidation: "Never.",
+	});
+	const result = buildDecisionsContent("", output);
+	assert.ok(result);
+	assert.ok(!result.includes("Session:"));
+	assert.ok(!result.includes("Window:"));
 });
 
 test("buildDecisionsContent returns null for no_decision", () => {
@@ -180,7 +220,8 @@ test("buildDecisionsContent returns null for no_decision", () => {
 		impact: "",
 		invalidation: "",
 	});
-	assert.equal(buildDecisionsContent("# Decisions", output), null);
+	const provenance = { sessionId: "ses-004", startEntryId: "s1", endEntryId: "s2" };
+	assert.equal(buildDecisionsContent("# Decisions", output, provenance), null);
 });
 
 test("buildConventionsContent returns null for empty output", () => {

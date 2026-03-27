@@ -19,6 +19,18 @@ const baseDir = dirname(fileURLToPath(import.meta.url));
 
 type AgentMessage = { role?: string; content?: unknown };
 
+export type WindowResult = {
+	messages: AgentMessage[];
+	startEntryId: string | null;
+	endEntryId: string | null;
+};
+
+export type Provenance = {
+	sessionId: string;
+	startEntryId: string | null;
+	endEntryId: string | null;
+};
+
 export type PromptExecutor = (
 	prompt: string,
 	ctx: ExtensionContext,
@@ -105,28 +117,43 @@ export const executePrompt: PromptExecutor = async (
 	return output;
 };
 
+type SessionEntry = { type: string; id?: string; message?: AgentMessage };
+
+const isRelevantMessage = (
+	entry: SessionEntry,
+): entry is SessionEntry & { message: AgentMessage } =>
+	entry.type === "message" &&
+	entry.message != null &&
+	(entry.message.role === "user" || entry.message.role === "assistant");
+
+const findLastEntryId = (entries: SessionEntry[], messages: AgentMessage[]): string | null => {
+	const messageSet = new Set(messages);
+	for (let i = entries.length - 1; i >= 0; i -= 1) {
+		const entry = entries[i];
+		if (entry && entry.type === "message" && messageSet.has(entry.message as AgentMessage)) {
+			return entry.id ?? null;
+		}
+	}
+	return null;
+};
+
 export const selectRecentMessages = (
-	entries: Array<{ type: string; message?: AgentMessage }>,
+	entries: SessionEntry[],
 	windowTurns: number,
-): AgentMessage[] => {
+): WindowResult => {
 	const recentMessages: AgentMessage[] = [];
-	// Buffer assistant replies until we confirm the associated user turn is within the window.
 	const pendingAssistants: AgentMessage[] = [];
 	let userTurns = 0;
+	let startEntryId: string | null = null;
 
 	for (let index = entries.length - 1; index >= 0; index -= 1) {
 		const entry = entries[index];
-		if (!entry || entry.type !== "message") {
+		if (!entry || !isRelevantMessage(entry)) {
 			continue;
 		}
 
-		const message = entry.message as AgentMessage;
-		if (!message || (message.role !== "user" && message.role !== "assistant")) {
-			continue;
-		}
-
-		if (message.role === "assistant") {
-			pendingAssistants.push(message);
+		if (entry.message.role === "assistant") {
+			pendingAssistants.push(entry.message);
 			continue;
 		}
 
@@ -139,10 +166,13 @@ export const selectRecentMessages = (
 		}
 		pendingAssistants.length = 0;
 		userTurns += 1;
-		recentMessages.unshift(message);
+		recentMessages.unshift(entry.message);
+		startEntryId = entry.id ?? null;
 	}
 
-	return recentMessages;
+	const endEntryId = recentMessages.length > 0 ? findLastEntryId(entries, recentMessages) : null;
+
+	return { messages: recentMessages, startEntryId, endEntryId };
 };
 
 const formatRecentTurns = (recentMessages: AgentMessage[]) =>
@@ -366,8 +396,8 @@ const parseDecisionOutput = (output: string): DecisionOutput => {
 	return decision;
 };
 
-const formatDecisionTemplate = (decision: DecisionOutput): string =>
-	[
+const formatDecisionTemplate = (decision: DecisionOutput, provenance?: Provenance): string => {
+	const lines = [
 		`## ${decision.title}`,
 		"",
 		`- Status: ${decision.status}`,
@@ -377,10 +407,22 @@ const formatDecisionTemplate = (decision: DecisionOutput): string =>
 		`- Why: ${decision.why}`,
 		`- Impact: ${decision.impact}`,
 		`- Invalidation: ${decision.invalidation}`,
-		"",
-	].join("\n");
+	];
 
-export const buildDecisionsContent = (existing: string, output: string): string | null => {
+	if (provenance) {
+		lines.push(`- Session: ${provenance.sessionId}`);
+		lines.push(`- Window: ${provenance.startEntryId}..${provenance.endEntryId}`);
+	}
+
+	lines.push("");
+	return lines.join("\n");
+};
+
+export const buildDecisionsContent = (
+	existing: string,
+	output: string,
+	provenance?: Provenance,
+): string | null => {
 	const parsed = parseDecisionOutput(output);
 	if (parsed.status === "no_decision") {
 		return null;
@@ -388,7 +430,7 @@ export const buildDecisionsContent = (existing: string, output: string): string 
 
 	const trimmedExisting = existing.trim();
 	const header = trimmedExisting.length === 0 ? "# Decisions\n\n" : `${trimmedExisting}\n\n`;
-	return `${header}${formatDecisionTemplate(parsed)}`;
+	return `${header}${formatDecisionTemplate(parsed, provenance)}`;
 };
 
 export const buildConventionsContent = (output: string): string | null => {
@@ -420,12 +462,12 @@ export const execScribe = async (
 	options?: { queue?: (path: string, fn: () => Promise<void>) => Promise<void> },
 ) => {
 	const branch = ctx.sessionManager.getBranch();
-	const recentMessages = selectRecentMessages(branch, windowTurns);
-	if (recentMessages.length === 0) {
+	const windowResult = selectRecentMessages(branch, windowTurns);
+	if (windowResult.messages.length === 0) {
 		return;
 	}
 
-	const recentTurns = formatRecentTurns(recentMessages);
+	const recentTurns = formatRecentTurns(windowResult.messages);
 	const prompt = await getPrompt(promptPath, { recentTurns });
 	const output = await promptExecutor(prompt, ctx);
 	if (!output) {
@@ -436,9 +478,15 @@ export const execScribe = async (
 	const decisionsPath = getDecisionsPath(ctx);
 	const queue = resolveMutationQueue(options, "decisions");
 
+	const provenance: Provenance = {
+		sessionId: ctx.sessionManager.getSessionId(),
+		startEntryId: windowResult.startEntryId,
+		endEntryId: windowResult.endEntryId,
+	};
+
 	await queue(decisionsPath, async () => {
 		const existing = existsSync(decisionsPath) ? await readFile(decisionsPath, "utf-8") : "";
-		const nextContent = buildDecisionsContent(existing, safeOutput);
+		const nextContent = buildDecisionsContent(existing, safeOutput, provenance);
 		if (!nextContent) {
 			return;
 		}
