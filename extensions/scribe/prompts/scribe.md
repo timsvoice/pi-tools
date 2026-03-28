@@ -42,11 +42,12 @@ If the text only describes what happened in this task, output no_decision.
 - Never include example labels or example content in output.
 
 ## Output constraints
-- Return valid JSON only.
+- Output must be a single JSON object and nothing else.
+- The first character of the output must be `{` and the last must be `}`.
 - Do not wrap the JSON in code fences or Markdown.
 - If status = "decision", all non-status fields must be non-empty (use "not stated" if missing).
 - If no decision qualifies, return {"status":"no_decision"} with empty fields.
-- No commentary or extra text.
+- No commentary, acknowledgements, or extra text.
 
 ## Examples
 

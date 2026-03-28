@@ -1,0 +1,420 @@
+- description: 1. Integrates a new valid decision
+  vars:
+    currentConventions: |-
+      # Conventions
+
+      ## Conflicts Requiring Review
+      None.
+
+      ## Active Decisions
+      - Use Node.js 22+.
+
+      ## Superseded Decisions
+      None.
+    newCandidates: |-
+      Candidate: The API boundary owns input validation; internal services must not validate raw request payloads. Why: shared rules drift. Impact: validate at API boundary before service logic. Invalidate if a shared validation service replaces per-layer validation.
+  assert:
+    - type: javascript
+      value: |
+        const trimmed = output.trim();
+        let ok = trimmed.startsWith("# Conventions")
+          && output.includes("## Conflicts Requiring Review")
+          && output.includes("## Active Decisions")
+          && output.includes("## Superseded Decisions");
+        return ok;
+    - type: llm-rubric
+      value: |-
+        PASS if Active Decisions preserves the Node.js 22+ rule and includes a durable rule about API boundary validation (API boundary owns input validation; services do not validate raw request payloads).
+        FAIL if the API boundary validation rule is missing or distorted, or if the Node.js rule is dropped.
+
+        PASS example:
+        # Conventions
+        ## Conflicts Requiring Review
+        None.
+        ## Active Decisions
+        - Use Node.js 22+.
+        - Validate requests at the API boundary; services must not validate raw payloads.
+        ## Superseded Decisions
+        None.
+
+        FAIL example:
+        # Conventions
+        ## Conflicts Requiring Review
+        None.
+        ## Active Decisions
+        - Use Node.js 22+.
+        - Use a shared validation service.
+        ## Superseded Decisions
+        None.
+
+- description: 2. Rejects a migration/temporary candidate
+  vars:
+    currentConventions: |-
+      # Conventions
+
+      ## Conflicts Requiring Review
+      None.
+
+      ## Active Decisions
+      - Use Node.js 22+.
+
+      ## Superseded Decisions
+      None.
+    newCandidates: |-
+      Candidate: Keep the legacy fallback during migration to the new config format.
+  assert:
+    - type: javascript
+      value: |
+        const trimmed = output.trim();
+        let ok = trimmed.startsWith("# Conventions");
+        return ok;
+    - type: llm-rubric
+      value: |-
+        PASS if the migration/legacy fallback candidate does not appear in any section and the Node.js 22+ rule remains.
+        FAIL if the migration/legacy fallback candidate appears in Conflicts, Active, or Superseded.
+
+        PASS example:
+        ## Active Decisions
+        - Use Node.js 22+.
+
+        FAIL example:
+        ## Active Decisions
+        - Keep the legacy fallback during migration.
+
+- description: 3. Merges overlapping candidates
+  vars:
+    currentConventions: |-
+      # Conventions
+
+      ## Conflicts Requiring Review
+      None.
+
+      ## Active Decisions
+      None.
+
+      ## Superseded Decisions
+      None.
+    newCandidates: |-
+      Candidate: All persistence writes must go through the data layer APIs.
+      Candidate: Writes should only be performed via the data layer; no direct persistence writes.
+  assert:
+    - type: javascript
+      value: |
+        let ok = output.trim().startsWith("# Conventions");
+        return ok;
+    - type: llm-rubric
+      value: |-
+        PASS if Active Decisions contains a single consolidated rule covering data-layer-only writes (one entry, not two).
+        FAIL if Active Decisions lists two separate entries that restate the same data-layer-only write rule.
+
+        PASS example:
+        ## Active Decisions
+        - All persistence writes must go through the data layer.
+
+        FAIL example:
+        ## Active Decisions
+        - All persistence writes must go through the data layer APIs.
+        - Writes should only be performed via the data layer; no direct persistence writes.
+
+- description: 4. Preserves existing decisions when no candidates
+  vars:
+    currentConventions: |-
+      # Conventions
+
+      ## Conflicts Requiring Review
+      None.
+
+      ## Active Decisions
+      - Use Node.js 22+.
+
+      ## Superseded Decisions
+      None.
+    newCandidates: |-
+      No new candidates.
+  assert:
+    - type: javascript
+      value: |
+        const trimmed = output.trim();
+        const conflictsNone = /## Conflicts Requiring Review\s+None\./.test(output);
+        const supersededNone = /## Superseded Decisions\s+None\./.test(output);
+        const activeHasNode = output.toLowerCase().includes("node.js 22");
+        let ok = trimmed.startsWith("# Conventions")
+          && output.includes("## Active Decisions")
+          && conflictsNone
+          && supersededNone
+          && activeHasNode;
+        return ok;
+
+- description: 5. Detects and escalates conflicts
+  vars:
+    currentConventions: |-
+      # Conventions
+
+      ## Conflicts Requiring Review
+      None.
+
+      ## Active Decisions
+      - Use blocking writes for crash safety.
+
+      ## Superseded Decisions
+      None.
+    newCandidates: |-
+      Candidate: Use async writes for throughput; do not block.
+  assert:
+    - type: javascript
+      value: |
+        let ok = output.includes("## Conflicts Requiring Review")
+          && output.includes("## Active Decisions")
+          && output.includes("## Superseded Decisions");
+        return ok;
+    - type: llm-rubric
+      value: |-
+        PASS if the Conflicts Requiring Review section explicitly notes the contradiction between blocking writes and async writes, and the existing blocking-writes decision remains in Active Decisions.
+        FAIL if the conflict is resolved, the existing blocking-writes decision is removed from Active, or only one side appears without being flagged in Conflicts.
+
+        PASS example:
+        ## Conflicts Requiring Review
+        - Blocking writes for crash safety vs async writes for throughput.
+        ## Active Decisions
+        - Use blocking writes for crash safety.
+
+        FAIL example:
+        ## Conflicts Requiring Review
+        None.
+        ## Active Decisions
+        - Use async writes for throughput.
+
+- description: 6. Moves superseded decision
+  vars:
+    currentConventions: |-
+      # Conventions
+
+      ## Conflicts Requiring Review
+      None.
+
+      ## Active Decisions
+      - Feature flags are controlled via environment variables.
+
+      ## Superseded Decisions
+      None.
+    newCandidates: |-
+      Candidate: Replace env-var feature flags with the config service for all environments.
+  assert:
+    - type: javascript
+      value: |
+        let ok = output.includes("## Active Decisions")
+          && output.includes("## Superseded Decisions");
+        return ok;
+    - type: llm-rubric
+      value: |-
+        PASS if the env-var feature flags decision moves to Superseded Decisions and the new config-service rule appears in Active Decisions.
+        FAIL if both rules remain in Active Decisions or the old rule is not moved.
+
+        PASS example:
+        ## Active Decisions
+        - Feature flags are configured via the config service.
+        ## Superseded Decisions
+        - Feature flags are controlled via environment variables.
+
+        FAIL example:
+        ## Active Decisions
+        - Feature flags are controlled via environment variables.
+        - Feature flags are configured via the config service.
+        ## Superseded Decisions
+        None.
+
+- description: 7. Strips duplicate of existing convention
+  vars:
+    currentConventions: |-
+      # Conventions
+
+      ## Conflicts Requiring Review
+      None.
+
+      ## Active Decisions
+      - Use Node.js 22+.
+
+      ## Superseded Decisions
+      None.
+    newCandidates: |-
+      Candidate: Use Node.js 22+ for all tooling.
+  assert:
+    - type: javascript
+      value: |
+        let ok = output.trim().startsWith("# Conventions");
+        return ok;
+    - type: llm-rubric
+      value: |-
+        PASS if Active Decisions contains only one Node.js 22+ rule (no duplicate entry).
+        FAIL if Active Decisions lists two separate Node.js 22+ entries.
+
+        PASS example:
+        ## Active Decisions
+        - Use Node.js 22+.
+
+        FAIL example:
+        ## Active Decisions
+        - Use Node.js 22+.
+        - Use Node.js 22+ for all tooling.
+
+- description: 8. Outputs clean markdown structure
+  vars:
+    currentConventions: |-
+      # Conventions
+
+      ## Conflicts Requiring Review
+      None.
+
+      ## Active Decisions
+      - Use Node.js 22+.
+
+      ## Superseded Decisions
+      None.
+    newCandidates: |-
+      No new candidates.
+  assert:
+    - type: javascript
+      value: |
+        const trimmed = output.trim();
+        let ok = trimmed.startsWith("# Conventions")
+          && output.includes("## Conflicts Requiring Review")
+          && output.includes("## Active Decisions")
+          && output.includes("## Superseded Decisions")
+          && !output.includes("{Short title}")
+          && !output.includes("{...}")
+          && !output.includes("Note:")
+          && !output.includes("Summary:")
+          && !output.includes("Here is");
+        return ok;
+
+- description: 9. Handles empty candidates gracefully
+  vars:
+    currentConventions: |-
+      # Conventions
+
+      ## Conflicts Requiring Review
+      None.
+
+      ## Active Decisions
+      - Use Node.js 22+.
+
+      ## Superseded Decisions
+      None.
+    newCandidates: |-
+      
+  assert:
+    - type: javascript
+      value: |
+        const trimmed = output.trim();
+        const conflictsNone = /## Conflicts Requiring Review\s+None\./.test(output);
+        const supersededNone = /## Superseded Decisions\s+None\./.test(output);
+        let ok = trimmed.startsWith("# Conventions")
+          && output.includes("## Active Decisions")
+          && conflictsNone
+          && supersededNone
+          && output.toLowerCase().includes("node.js 22");
+        return ok;
+
+- description: 10. No placeholder leakage
+  vars:
+    currentConventions: |-
+      # Conventions
+
+      ## Conflicts Requiring Review
+      None.
+
+      ## Active Decisions
+      None.
+
+      ## Superseded Decisions
+      None.
+    newCandidates: |-
+      Candidate: {Short title} Use standard cache keys for all lookups.
+      Candidate: {...} This is a placeholder example.
+  assert:
+    - type: javascript
+      value: |
+        let ok = !output.includes("{Short title}")
+          && !output.includes("{...}");
+        return ok;
+    - type: llm-rubric
+      value: |-
+        PASS if the output either includes a clean rule about standard cache keys (without template tokens) or omits the placeholder candidate entirely.
+        FAIL if the output includes template tokens or echoes the placeholder text.
+
+        PASS example:
+        ## Active Decisions
+        - Use standard cache keys for all lookups.
+
+        FAIL example:
+        ## Active Decisions
+        - {Short title} Use standard cache keys for all lookups.
+        - {...} This is a placeholder example.
+
+- description: 11. Inclusion gates filter local edits
+  vars:
+    currentConventions: |-
+      # Conventions
+
+      ## Conflicts Requiring Review
+      None.
+
+      ## Active Decisions
+      - Use Node.js 22+.
+
+      ## Superseded Decisions
+      None.
+    newCandidates: |-
+      Candidate: The API boundary owns input validation; internal services must not validate raw request payloads.
+      Candidate: Rename the helper to reduce clutter in this file.
+  assert:
+    - type: javascript
+      value: |
+        let ok = output.trim().startsWith("# Conventions");
+        return ok;
+    - type: llm-rubric
+      value: |-
+        PASS if Active Decisions includes the durable API boundary validation rule and does not include the local rename/clutter edit.
+        FAIL if Active Decisions includes the local rename/clutter edit, or omits the API boundary validation rule.
+
+        PASS example:
+        ## Active Decisions
+        - API boundary owns input validation; services must not validate raw payloads.
+
+        FAIL example:
+        ## Active Decisions
+        - API boundary owns input validation; services must not validate raw payloads.
+        - Rename the helper to reduce clutter.
+
+- description: 12. Concise rule-form output
+  vars:
+    currentConventions: |-
+      # Conventions
+
+      ## Conflicts Requiring Review
+      None.
+
+      ## Active Decisions
+      None.
+
+      ## Superseded Decisions
+      None.
+    newCandidates: |-
+      Candidate: Always validate outbound webhook payloads. Why: avoids 3rd-party rejection. Impact: add schema validation before sending. Invalidate if downstream vendor accepts unsigned payloads.
+  assert:
+    - type: javascript
+      value: |
+        let ok = output.trim().startsWith("# Conventions");
+        return ok;
+    - type: llm-rubric
+      value: |-
+        PASS if the Active Decisions entry is a concise rule statement.
+        FAIL if the entry retells the conversation or explains the decision in narrative form.
+
+        PASS example:
+        ## Active Decisions
+        - Validate outbound webhook payloads against the receiver's schema before sending.
+
+        FAIL example:
+        ## Active Decisions
+        - After discussing webhook reliability, we decided to validate outbound payloads because third parties rejected them.

@@ -237,9 +237,17 @@
     - type: javascript
       value: |
         const trimmed = output.trim();
+        if (!trimmed.startsWith("{") || !trimmed.endsWith("}")) {
+          return false;
+        }
         try {
           JSON.parse(trimmed);
         } catch {
           return false;
         }
-        return !trimmed.includes("```") && !trimmed.startsWith("Note:") && !trimmed.startsWith("Summary:");
+        return !trimmed.includes("```")
+          && !trimmed.startsWith("Note:")
+          && !trimmed.startsWith("Summary:")
+          && !trimmed.startsWith("Thanks")
+          && !trimmed.startsWith("Thank you")
+          && !trimmed.startsWith("Sure");
