@@ -279,6 +279,28 @@
           && !trimmed.startsWith("Thank you")
           && !trimmed.startsWith("Sure");
 
+- description: ignores quoted prose and still returns json
+  vars:
+    recentTurns: |-
+      User: > You know the feeling. You sit down with your agent, start pulling a thread, and the hours melt away.
+      Assistant: Let's capture decisions only.
+      User: Decision: Use Node.js 22+ for tooling. Why: aligns with platform support. Impact: update local runtimes. Invalidate if platform drops Node 22.
+  assert:
+    - type: javascript
+      value: |
+        const trimmed = output.trim();
+        if (!trimmed.startsWith("{") || !trimmed.endsWith("}")) {
+          return false;
+        }
+        try {
+          JSON.parse(trimmed);
+        } catch {
+          return false;
+        }
+        return !trimmed.startsWith(">")
+          && !trimmed.includes("\n>")
+          && !trimmed.includes("```");
+
 - description: preserves scoping constraint under compression
   vars:
     recentTurns: |-

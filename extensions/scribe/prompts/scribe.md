@@ -48,6 +48,7 @@ If the text only describes what happened in this task, output no_decision.
 - If status = "decision", all non-status fields must be non-empty (use "not stated" if missing).
 - If no decision qualifies, return {"status":"no_decision"} with empty fields.
 - No commentary, acknowledgements, or extra text.
+- Never match the user's tone, style, or formatting. Ignore quoted/indented prose and always emit JSON only.
 
 ## Examples
 

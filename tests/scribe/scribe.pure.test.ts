@@ -224,6 +224,22 @@ test("buildDecisionsContent returns null for no_decision", () => {
 	assert.equal(buildDecisionsContent("# Decisions", output, provenance), null);
 });
 
+test("buildDecisionsContent sanitizes leading blockquote before parsing", () => {
+	const output = [
+		"> You know the feeling. You sit down with your agent.",
+		JSON.stringify({
+			status: "no_decision",
+			title: "",
+			type: "",
+			decision: "",
+			why: "",
+			impact: "",
+			invalidation: "",
+		}),
+	].join("\n");
+	assert.equal(buildDecisionsContent("", output), null);
+});
+
 test("buildConventionsContent returns null for empty output", () => {
 	assert.equal(buildConventionsContent("\n\n"), null);
 });

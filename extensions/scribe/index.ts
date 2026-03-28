@@ -332,8 +332,21 @@ const DECISION_FIELDS: Array<Exclude<keyof DecisionOutput, "status">> = [
 ];
 
 const parseDecisionPayload = (output: string): Record<string, unknown> => {
-	const trimmed = output.trim();
-	if (!trimmed) {
+	const stripped = output
+		.split("\n")
+		.filter((line, index, lines) => {
+			if (line.trim().length === 0) {
+				return lines.slice(0, index).some((prior) => prior.trim().length > 0);
+			}
+			const isBlockquote = /^\s*>/.test(line);
+			if (!isBlockquote) {
+				return true;
+			}
+			return lines.slice(0, index).some((prior) => prior.trim().length > 0);
+		})
+		.join("\n")
+		.trim();
+	if (!stripped) {
 		throw new Error(
 			"Scribe extension failed to parse decision output: empty output. Fix: ensure the model returns JSON for decision capture.",
 		);
@@ -341,7 +354,7 @@ const parseDecisionPayload = (output: string): Record<string, unknown> => {
 
 	let parsed: unknown;
 	try {
-		parsed = JSON.parse(trimmed);
+		parsed = JSON.parse(stripped);
 	} catch (error) {
 		const message = error instanceof Error ? error.message : String(error);
 		throw new Error(
